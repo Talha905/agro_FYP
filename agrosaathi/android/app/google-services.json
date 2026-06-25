@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "131692782874",
+    "project_id": "farmerhelp-4d27c",
+    "storage_bucket": "farmerhelp-4d27c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:131692782874:android:b7f70cd208406d19f9f8a3",
+        "android_client_info": {
+          "package_name": "com.example.agrosaathi"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0iSAnB7yvmjYWBqVrzLtt6cp2IXUpoQM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
