@@ -42,6 +42,23 @@ dependencies:
   image: ^4.5.4
   http: ^1.5.0
 
+  # Person B — camera for disease detection
+  camera: ^0.10.5
+
+  # Person C — marketplace/maps
+  geolocator: ^11.0.0
+  google_maps_flutter: ^2.5.3
+  geoflutterfire_plus: ^0.0.33
+
+  # Person D — weather and notifications
+  flutter_local_notifications: ^17.0.0
+
+  # Multilingual (if not already added)
+  flutter_localizations:
+    sdk: flutter
+  intl: 0.20.2
+
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
