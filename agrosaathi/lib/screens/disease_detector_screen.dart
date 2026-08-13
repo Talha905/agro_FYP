@@ -13,16 +13,10 @@ class DiseaseDetectorScreen extends StatefulWidget {
 class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
   final DiseaseDetectorService _detectorService = DiseaseDetectorService();
   final ImagePicker _picker = ImagePicker();
-  
+
   File? _imageFile;
   bool _isLoading = false;
   Map<String, dynamic>? _predictionResult;
-
-  @override
-  void dispose() {
-    _detectorService.dispose();
-    super.dispose();
-  }
 
   Future<void> _pickImage(ImageSource source) async {
     try {
@@ -32,17 +26,16 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
         maxHeight: 1000,
         imageQuality: 85,
       );
-      
+
       if (pickedFile != null) {
         setState(() {
           _imageFile = File(pickedFile.path);
-          _predictionResult = null; // Reset previous result
+          _predictionResult = null;
         });
-        
-        // Auto-run prediction once image is picked
         _runPrediction();
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to pick image: $e')),
       );
@@ -59,74 +52,67 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
 
     try {
       final result = await _detectorService.predict(_imageFile!.path);
-      setState(() {
-        _predictionResult = result;
-      });
+      if (!mounted) return;
+      setState(() => _predictionResult = result);
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Prediction error: $e')),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  /// Converts a raw model label (e.g. "Tomato___Early_blight") into a
+  /// human-readable string (e.g. "Tomato: Early Blight").
   String _formatDisease(String rawLabel) {
     final parts = rawLabel.split('___');
     if (parts.length < 2) return rawLabel.replaceAll('_', ' ');
-
     final crop = parts[0].replaceAll('_', ' ').trim();
     final disease = parts[1].replaceAll('_', ' ').trim();
-
-    if (disease.toLowerCase() == 'healthy') {
-      return '$crop (Healthy)';
-    } else {
-      return '$crop: $disease';
-    }
+    return disease.toLowerCase() == 'healthy' ? '$crop (Healthy)' : '$crop: $disease';
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final cs = theme.colorScheme;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. Welcome Card
+          // ── Header Info Card ──────────────────────────────────────────────
           Card(
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.5)),
+              side: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
             ),
-            color: colorScheme.surfaceVariant.withOpacity(0.3),
+            color: cs.surfaceVariant.withOpacity(0.3),
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Row(
                 children: [
-                  Icon(Icons.spa, size: 40, color: colorScheme.primary),
+                  Icon(Icons.spa, size: 40, color: cs.primary),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "AI Disease Detector",
+                          'AI Disease Detector',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: colorScheme.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          "Take a photo or upload an image of a crop leaf to detect disease using on-device AI.",
+                          'Capture or upload a crop leaf photo. Our FastAPI server will classify the disease instantly.',
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.onSurfaceVariant.withOpacity(0.8),
+                            color: cs.onSurfaceVariant.withOpacity(0.8),
                           ),
                         ),
                       ],
@@ -138,28 +124,27 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
           ),
           const SizedBox(height: 20),
 
-          // 2. Image Preview Container
+          // ── Image Preview ────────────────────────────────────────────────
           GestureDetector(
             onTap: () => _showImageSourceSelector(context),
             child: Container(
               height: 280,
               decoration: BoxDecoration(
-                color: colorScheme.surfaceVariant.withOpacity(0.15),
+                color: cs.surfaceVariant.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: _imageFile != null
-                      ? colorScheme.primary.withOpacity(0.5)
-                      : colorScheme.outlineVariant,
+                      ? cs.primary.withOpacity(0.5)
+                      : cs.outlineVariant,
                   width: 2,
-                  style: BorderStyle.solid,
                 ),
                 boxShadow: _imageFile != null
                     ? [
                         BoxShadow(
-                          color: colorScheme.primary.withOpacity(0.05),
+                          color: cs.primary.withOpacity(0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
-                        )
+                        ),
                       ]
                     : null,
               ),
@@ -169,10 +154,7 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
                     ? Stack(
                         fit: StackFit.expand,
                         children: [
-                          Image.file(
-                            _imageFile!,
-                            fit: BoxFit.cover,
-                          ),
+                          Image.file(_imageFile!, fit: BoxFit.cover),
                           Positioned(
                             bottom: 12,
                             right: 12,
@@ -189,7 +171,7 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
                                   Icon(Icons.edit, color: Colors.white, size: 14),
                                   SizedBox(width: 4),
                                   Text(
-                                    "Tap to Change",
+                                    'Tap to Change',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 12,
@@ -208,21 +190,21 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
                           Icon(
                             Icons.add_photo_alternate_outlined,
                             size: 64,
-                            color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+                            color: cs.onSurfaceVariant.withOpacity(0.5),
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            "Tap to Add Plant Image",
+                            'Tap to Add Plant Image',
                             style: theme.textTheme.titleMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
+                              color: cs.onSurfaceVariant,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            "Supports JPG, PNG",
+                            'Supports JPG, PNG',
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+                              color: cs.onSurfaceVariant.withOpacity(0.5),
                             ),
                           ),
                         ],
@@ -232,14 +214,14 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
           ),
           const SizedBox(height: 24),
 
-          // 3. Selection Buttons
+          // ── Picker Buttons ───────────────────────────────────────────────
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => _pickImage(ImageSource.gallery),
                   icon: const Icon(Icons.photo_library),
-                  label: const Text("Gallery"),
+                  label: const Text('Gallery'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -253,7 +235,7 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
                 child: FilledButton.icon(
                   onPressed: () => _pickImage(ImageSource.camera),
                   icon: const Icon(Icons.camera_alt),
-                  label: const Text("Camera"),
+                  label: const Text('Camera'),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -266,13 +248,13 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
           ),
           const SizedBox(height: 24),
 
-          // 4. Loading State
-          if (_isLoading) ...[
+          // ── Loading State ────────────────────────────────────────────────
+          if (_isLoading)
             Card(
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: colorScheme.outlineVariant),
+                side: BorderSide(color: cs.outlineVariant),
               ),
               child: const Padding(
                 padding: EdgeInsets.symmetric(vertical: 32.0),
@@ -281,24 +263,22 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
                     CircularProgressIndicator(),
                     SizedBox(height: 16),
                     Text(
-                      "Analyzing image details...",
+                      'Analyzing image...',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     SizedBox(height: 4),
                     Text(
-                      "Loading on-device model with API fallback",
+                      'Sending to FastAPI backend for classification',
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                   ],
                 ),
               ),
             ),
-          ],
 
-          // 5. Result Display Card
-          if (_predictionResult != null) ...[
-            _buildResultCard(context, colorScheme, theme),
-          ],
+          // ── Result Card ──────────────────────────────────────────────────
+          if (_predictionResult != null)
+            _buildResultCard(context, cs, theme),
         ],
       ),
     );
@@ -310,58 +290,56 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Wrap(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('Choose from Gallery'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _pickImage(ImageSource.gallery);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.camera_alt),
-                title: const Text('Take a Photo'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _pickImage(ImageSource.camera);
-                },
-              ),
-            ],
-          ),
-        );
-      },
+      builder: (_) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Choose from Gallery'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Take a Photo'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _pickImage(ImageSource.camera);
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildResultCard(
-      BuildContext context, ColorScheme colorScheme, ThemeData theme) {
-    final success = _predictionResult!['success'] ?? false;
-    
+  Widget _buildResultCard(BuildContext context, ColorScheme cs, ThemeData theme) {
+    final bool success = _predictionResult!['success'] ?? false;
+
+    // ── Error State ────────────────────────────────────────────────────────
     if (!success) {
       return Card(
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: colorScheme.error.withOpacity(0.5)),
+          side: BorderSide(color: cs.error.withOpacity(0.5)),
         ),
-        color: colorScheme.errorContainer.withOpacity(0.2),
+        color: cs.errorContainer.withOpacity(0.2),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(Icons.error_outline, color: colorScheme.error),
+                  Icon(Icons.cloud_off, color: cs.error),
                   const SizedBox(width: 8),
                   Text(
-                    "Detection Error",
+                    'Server Unreachable',
                     style: theme.textTheme.titleMedium?.copyWith(
-                      color: colorScheme.error,
+                      color: cs.error,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -369,9 +347,10 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                _predictionResult!['error'] ?? "An unknown error occurred during prediction.",
+                _predictionResult!['error'] ??
+                    'An unknown error occurred. Please ensure the FastAPI backend is running.',
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onErrorContainer,
+                  color: cs.onErrorContainer,
                 ),
               ),
             ],
@@ -380,17 +359,13 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
       );
     }
 
+    // ── Success State ──────────────────────────────────────────────────────
     final String rawDisease = _predictionResult!['disease'] ?? 'Unknown';
     final double confidence = _predictionResult!['confidence'] ?? 0.0;
-    final String source = _predictionResult!['source'] ?? 'local';
-    
-    final formattedName = _formatDisease(rawDisease);
-    final confidencePercent = (confidence * 100).toStringAsFixed(1);
-    
-    // Choose theme colors based on whether it is healthy or diseased
+    final String formattedName = _formatDisease(rawDisease);
     final bool isHealthy = rawDisease.toLowerCase().contains('healthy');
     final Color resultColor = isHealthy ? Colors.green : Colors.orange;
-    
+
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -400,12 +375,13 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header of Result
+          // Card Header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: resultColor.withOpacity(0.1),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -418,7 +394,7 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      isHealthy ? "Healthy Plant Detected" : "Disease Detected",
+                      isHealthy ? 'Healthy Plant' : 'Disease Detected',
                       style: theme.textTheme.titleSmall?.copyWith(
                         color: resultColor,
                         fontWeight: FontWeight.bold,
@@ -426,100 +402,88 @@ class _DiseaseDetectorScreenState extends State<DiseaseDetectorScreen> {
                     ),
                   ],
                 ),
-                // Source Badge (Local TFLite vs API Fallback)
+                // Source Badge — always FastAPI
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: source == 'local' 
-                        ? Colors.green.shade700 
-                        : Colors.blue.shade700,
+                    color: Colors.indigo.shade700,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text(
-                    source == 'local' ? 'On-Device AI' : 'Cloud AI (Fallback)',
-                    style: const TextStyle(
+                  child: const Text(
+                    'FastAPI',
+                    style: TextStyle(
                       color: Colors.white,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ),
               ],
             ),
           ),
-          
+
+          // Card Body
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Disease Name
                 Text(
                   formattedName,
                   style: theme.textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 16),
-                
-                // Confidence gauge
+
+                // Confidence Bar
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                "Confidence Score",
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                              Text(
-                                "$confidencePercent%",
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: colorScheme.primary,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: confidence,
-                              minHeight: 8,
-                              backgroundColor: colorScheme.primary.withOpacity(0.15),
-                              color: colorScheme.primary,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      'Confidence Score',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      '${(confidence * 100).toStringAsFixed(1)}%',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: cs.primary,
                       ),
                     ),
                   ],
                 ),
-                
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: confidence,
+                    minHeight: 8,
+                    backgroundColor: cs.primary.withOpacity(0.15),
+                    color: cs.primary,
+                  ),
+                ),
+
                 const SizedBox(height: 16),
                 const Divider(),
                 const SizedBox(height: 8),
-                
-                // Extra metadata details
+
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Icon(Icons.info_outline, size: 18, color: Colors.grey),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        isHealthy 
-                            ? "Keep up regular watering and soil nutrient checks."
-                            : "Consider consulting our Crop Advisor for detailed treatment steps.",
+                        isHealthy
+                            ? 'Keep up regular watering and soil nutrient checks.'
+                            : 'Visit the Crop Advisor tab for detailed treatment recommendations.',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                          color: cs.onSurfaceVariant,
                         ),
                       ),
                     ),

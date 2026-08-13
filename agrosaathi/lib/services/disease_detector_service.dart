@@ -1,65 +1,51 @@
-import 'tflite_service.dart';
 import 'api_service.dart';
 
 class DiseaseDetectorService {
-  final TfliteService _tfliteService = TfliteService();
-
-  /// Runs disease prediction on an image file.
-  /// 
-  /// Attempts on-device classification using TensorFlow Lite first. If this 
-  /// encounters any error (e.g. unsupported platform, dynamic library missing,
-  /// or out of memory), it will fall back to using the FastAPI backend service.
+  /// Runs disease prediction on an image file by sending it to the
+  /// FastAPI backend server for inference using the plant disease model.
   Future<Map<String, dynamic>> predict(String imagePath) async {
     try {
-      print('DiseaseDetectorService: Trying local prediction...');
-      final localResult = await _tfliteService.predict(imagePath);
-      print('DiseaseDetectorService: Local prediction successful.');
-      return {
-        'success': true,
-        'source': 'local',
-        'disease': localResult['disease'],
-        'confidence': localResult['confidence'] ?? 0.0,
-      };
-    } catch (localError) {
-      print('DiseaseDetectorService: Local prediction failed: $localError');
-      print('DiseaseDetectorService: Falling back to API prediction...');
-      try {
-        final apiResult = await ApiService.predictDisease(imagePath);
-        print('DiseaseDetectorService: API prediction complete.');
+      print('DiseaseDetectorService: Sending image to FastAPI backend...');
 
-        final bool success = apiResult['success'] ?? false;
-        if (!success) {
-          final errorMsg = apiResult['error'] ?? 'Inference failed on server';
-          throw Exception(errorMsg);
-        }
+      final apiResult = await ApiService.predictDisease(imagePath);
 
-        // The backend API returns confidence scaled as percentages (e.g. 98.5).
-        // We normalize it to a 0.0 to 1.0 scale to remain consistent with TFLite output.
-        double confidence = 0.0;
-        if (apiResult['confidence'] != null) {
-          confidence = (apiResult['confidence'] as num).toDouble() / 100.0;
-        }
+      final bool success = apiResult['success'] ?? false;
 
-        return {
-          'success': true,
-          'source': 'api',
-          'disease': apiResult['disease'] ?? 'Unknown',
-          'confidence': confidence,
-        };
-      } catch (apiError) {
-        print('DiseaseDetectorService: Remote API prediction failed: $apiError');
+      if (!success) {
+        final errorMsg = apiResult['error'] ?? 'Inference failed on the server.';
         return {
           'success': false,
-          'source': 'failed',
-          'error': 'Local error: $localError. Server error: $apiError',
+          'source': 'api',
           'disease': 'Detection Failed',
           'confidence': 0.0,
+          'error': errorMsg,
         };
       }
-    }
-  }
 
-  void dispose() {
-    _tfliteService.dispose();
+      // Backend returns confidence already scaled as a percentage (e.g. 98.5).
+      // Normalize it to 0.0 — 1.0 for the UI confidence bar.
+      double confidence = 0.0;
+      if (apiResult['confidence'] != null) {
+        confidence = (apiResult['confidence'] as num).toDouble() / 100.0;
+      }
+
+      print('DiseaseDetectorService: Prediction complete → ${apiResult['disease']}');
+
+      return {
+        'success': true,
+        'source': 'api',
+        'disease': apiResult['disease'] ?? 'Unknown',
+        'confidence': confidence,
+      };
+    } catch (e) {
+      print('DiseaseDetectorService: FastAPI prediction failed: $e');
+      return {
+        'success': false,
+        'source': 'api',
+        'disease': 'Detection Failed',
+        'confidence': 0.0,
+        'error': 'Could not connect to the backend server. Please ensure the FastAPI server is running.\nDetails: $e',
+      };
+    }
   }
 }
