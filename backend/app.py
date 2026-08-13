@@ -33,7 +33,7 @@ app.add_middleware(
 # ----------------------------------------
 
 interpreter = tf.lite.Interpreter(
-    model_path="model.tflite"
+    model_path="plant_disease_model.tflite"
 )
 
 interpreter.allocate_tensors()
