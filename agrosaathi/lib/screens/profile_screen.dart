@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/user_service.dart';
+import 'login_screen.dart';
 
 class ProfileScreen
     extends StatelessWidget {
@@ -86,6 +87,15 @@ class ProfileScreen
               await FirebaseAuth
                   .instance
                   .signOut();
+
+              UserService.currentUser = null;
+
+              if (!context.mounted) return;
+
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                (route) => false,
+              );
 
             },
 

@@ -5,6 +5,8 @@ import 'crop_advisor_screen.dart';
 import 'disease_detector_screen.dart';
 import 'marketplace_screen.dart';
 import 'profile_screen.dart';
+import '../services/growth_plan_service.dart';
+import '../services/user_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -18,6 +20,20 @@ class _DashboardScreenState
     extends State<DashboardScreen> {
 
   int selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Fire-and-forget: bring any active growth plan's currentStage up to
+    // date with elapsed days since planting. HomeScreen's stream will pick
+    // up any resulting Firestore writes automatically.
+    final farmerId = UserService.currentUser?.uid;
+    if (farmerId != null) {
+      GrowthPlanService().syncStagesForFarmer(farmerId).catchError((_) {
+        // Non-critical — a stale stage label is not worth surfacing an error for.
+      });
+    }
+  }
 
   final List<Widget> screens = const [
     HomeScreen(),
