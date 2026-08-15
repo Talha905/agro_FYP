@@ -44,7 +44,6 @@ dependencies:
 
   # Person B — camera for disease detection
   camera: ^0.10.5
-
   # Person C — marketplace/maps
   geolocator: ^11.0.0
   google_maps_flutter: ^2.5.3
@@ -57,6 +56,9 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: ^0.19.0
+  pdf: ^3.11.3
+  printing: ^5.14.3
+  path_provider: ^2.1.5
 
 
 dev_dependencies:

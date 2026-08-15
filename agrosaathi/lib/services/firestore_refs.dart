@@ -28,4 +28,7 @@ class FirestoreRefs {
 
   static CollectionReference bids(String listingId) =>
       listings.doc(listingId).collection('bids');
+
+  static CollectionReference notifications(String userId) =>
+      users.doc(userId).collection('notifications');
 }

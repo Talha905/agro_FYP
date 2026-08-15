@@ -40,6 +40,34 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
     }
   }
 
+  void _showAddImageMethodDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Color(0xFF2E7D32)),
+              title: const Text('Pick from Gallery', style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text('Drag & drop PC images to emulator first'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _getLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -70,16 +98,20 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       return;
     } 
 
-    Position position = await Geolocator.getCurrentPosition();
-    setState(() {
-      _currentLocation = GeoPoint(position.latitude, position.longitude);
-      _geohash = GeoFirePoint(_currentLocation!).geohash;
-    });
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location acquired successfully!')),
-      );
+    setState(() => _isLoading = true);
+    try {
+      Position position = await Geolocator.getCurrentPosition();
+      setState(() {
+        _currentLocation = GeoPoint(position.latitude, position.longitude);
+        _geohash = GeoFirePoint(_currentLocation!).geohash;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location acquired successfully!')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -141,29 +173,36 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF4F7F6),
       appBar: AppBar(
-        title: const Text('Create Listing', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 24)),
-        backgroundColor: const Color(0xFF2E7D32),
+        title: const Text('Create Listing', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF2E7D32), Color(0xFF4CAF50)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
         foregroundColor: Colors.white,
+        elevation: 0,
       ),
-      backgroundColor: const Color(0xFFFAF9F4),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator(color: Color(0xFF2E7D32)))
-        : SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
             child: Form(
               key: _formKey,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Crop Details', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Color(0xFF212121))),
-                  const SizedBox(height: 16),
+                  const Text('Crop Details', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF1A1A1A))),
+                  const SizedBox(height: 20),
                   TextFormField(
                     controller: _cropNameController,
-                    decoration: InputDecoration(
-                      labelText: 'Crop Name',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    decoration: _inputDecoration('Crop Name (e.g. Wheat, Tomato)', Icons.grass),
                     validator: (v) => v!.isEmpty ? 'Required' : null,
                   ),
                   const SizedBox(height: 16),
@@ -174,10 +213,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                         child: TextFormField(
                           controller: _quantityController,
                           keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: 'Quantity',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                          decoration: _inputDecoration('Quantity', Icons.scale),
                           validator: (v) => v!.isEmpty ? 'Required' : null,
                         ),
                       ),
@@ -186,12 +223,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                         flex: 1,
                         child: DropdownButtonFormField<String>(
                           value: _selectedUnit,
-                          items: ['kg', 'quintal'].map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                          items: ['kg', 'quintal'].map((u) => DropdownMenuItem(value: u, child: Text(u, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
                           onChanged: (val) => setState(() => _selectedUnit = val!),
-                          decoration: InputDecoration(
-                            labelText: 'Unit',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
+                          decoration: _inputDecoration('Unit', null),
                         ),
                       ),
                     ],
@@ -200,32 +234,29 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                   TextFormField(
                     controller: _priceController,
                     keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: 'Expected Price per $_selectedUnit',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      prefixIcon: const Icon(Icons.currency_rupee),
-                    ),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    decoration: _inputDecoration('Expected Price per $_selectedUnit', Icons.currency_rupee),
                     validator: (v) => v!.isEmpty ? 'Required' : null,
                   ),
-                  const SizedBox(height: 24),
-                  const Text('Images', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Color(0xFF212121))),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 32),
+                  const Text('Images', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF1A1A1A))),
+                  const SizedBox(height: 16),
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                    spacing: 12,
+                    runSpacing: 12,
                     children: [
                       ..._images.map((img) => Stack(
                         children: [
                           ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.file(img, width: 80, height: 80, fit: BoxFit.cover),
+                            borderRadius: BorderRadius.circular(16),
+                            child: Image.file(img, width: 100, height: 100, fit: BoxFit.cover),
                           ),
                           Positioned(
-                            right: 0, top: 0,
+                            right: 4, top: 4,
                             child: InkWell(
                               onTap: () => setState(() => _images.remove(img)),
                               child: Container(
-                                padding: const EdgeInsets.all(2),
+                                padding: const EdgeInsets.all(4),
                                 decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
                                 child: const Icon(Icons.close, size: 16, color: Colors.red),
                               ),
@@ -234,46 +265,114 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                         ],
                       )),
                       InkWell(
-                        onTap: _pickImage,
+                        onTap: _showAddImageMethodDialog,
                         child: Container(
-                          width: 80,
-                          height: 80,
+                          width: 100,
+                          height: 100,
                           decoration: BoxDecoration(
-                            border: Border.all(color: const Color(0xFF6B6B6B)),
-                            borderRadius: BorderRadius.circular(12),
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.grey[300]!, width: 2, style: BorderStyle.solid),
                           ),
-                          child: const Icon(Icons.add_a_photo, color: Color(0xFF2E7D32)),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.add_photo_alternate, color: Colors.grey[400], size: 30),
+                              const SizedBox(height: 4),
+                              Text('Add Image', style: TextStyle(color: Colors.grey[500], fontSize: 12, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
-                  const Text('Location', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Color(0xFF212121))),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: _getLocation,
-                    icon: const Icon(Icons.my_location, color: Color(0xFF1976D2)),
-                    label: Text(_currentLocation == null ? 'Get Current Location' : 'Location Acquired', style: const TextStyle(color: Color(0xFF1976D2))),
-                    style: OutlinedButton.styleFrom(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
-                  ),
                   const SizedBox(height: 32),
-                  ElevatedButton(
-                    onPressed: _submit,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2E7D32),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      minimumSize: const Size(double.infinity, 56),
+                  const Text('Location', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF1A1A1A))),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: _currentLocation != null ? Colors.green[50] : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: _currentLocation != null ? Colors.green[300]! : Colors.grey[300]!),
                     ),
-                    child: const Text('Publish Listing', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    child: Column(
+                      children: [
+                        Icon(
+                          _currentLocation != null ? Icons.check_circle : Icons.location_on_outlined,
+                          color: _currentLocation != null ? Colors.green[600] : Colors.grey[400],
+                          size: 40,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          _currentLocation != null ? 'Location Captured!' : 'Provide crop location to buyers',
+                          style: TextStyle(
+                            color: _currentLocation != null ? Colors.green[800] : Colors.grey[600],
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        OutlinedButton.icon(
+                          onPressed: _getLocation,
+                          icon: Icon(_currentLocation != null ? Icons.refresh : Icons.my_location),
+                          label: Text(_currentLocation != null ? 'Update Location' : 'Get Current Location'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _currentLocation != null ? Colors.green[700] : Colors.blue[700],
+                            side: BorderSide(color: _currentLocation != null ? Colors.green[700]! : Colors.blue[700]!),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(height: 100), // padding for bottom button
                 ],
               ),
             ),
           ),
+          
+          if (_isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.3),
+              child: const Center(child: CircularProgressIndicator(color: Colors.white)),
+            ),
+        ],
+      ),
+      bottomSheet: Container(
+        padding: const EdgeInsets.all(24.0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, -5))],
+        ),
+        child: SafeArea(
+          child: ElevatedButton(
+            onPressed: _isLoading ? null : _submit,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2E7D32),
+              foregroundColor: Colors.white,
+              elevation: 4,
+              shadowColor: const Color(0xFF2E7D32).withOpacity(0.5),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              minimumSize: const Size(double.infinity, 60),
+            ),
+            child: const Text('Publish Listing', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label, IconData? icon) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: icon != null ? Icon(icon, color: Colors.grey[600]) : null,
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.grey[200]!)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFF2E7D32), width: 2)),
     );
   }
 }

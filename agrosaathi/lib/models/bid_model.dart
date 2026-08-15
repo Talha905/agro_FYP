@@ -7,6 +7,7 @@ class BidModel {
   final double quantity;
   final String status;
   final String? message;
+  final String latestOfferBy; // 'buyer' or 'farmer'
   final Timestamp? createdAt;
 
   BidModel({
@@ -16,6 +17,7 @@ class BidModel {
     required this.quantity,
     required this.status,
     this.message,
+    this.latestOfferBy = 'buyer',
     this.createdAt,
   });
 
@@ -26,6 +28,7 @@ class BidModel {
       'quantity': quantity,
       'status': status,
       'message': message,
+      'latestOfferBy': latestOfferBy,
       'createdAt': createdAt ?? FieldValue.serverTimestamp(),
     };
   }
@@ -38,6 +41,7 @@ class BidModel {
       quantity: (map['quantity'] ?? 0).toDouble(),
       status: map['status'] ?? 'pending',
       message: map['message'],
+      latestOfferBy: map['latestOfferBy'] ?? 'buyer',
       createdAt: map['createdAt'],
     );
   }
