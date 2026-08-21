@@ -21,7 +21,7 @@ class FirestoreService {
     final doc = await firestore
         .collection("users")
         .doc(uid)
-        .get();
+        .get(const GetOptions(source: Source.serverAndCache));
 
     if (!doc.exists) return null;
 

@@ -22,4 +22,13 @@ class FirestoreRefs {
 
   static CollectionReference listings =
       firestore.collection('listings');
+
+  static Query bidsGroup =
+      firestore.collectionGroup('bids');
+
+  static CollectionReference bids(String listingId) =>
+      listings.doc(listingId).collection('bids');
+
+  static CollectionReference notifications(String userId) =>
+      users.doc(userId).collection('notifications');
 }

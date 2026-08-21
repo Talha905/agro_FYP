@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../services/user_service.dart';
+import '../models/user_model.dart';
 
 import 'dashboard_screen.dart';
 import 'profile_setup_screen.dart';
@@ -163,9 +164,9 @@ class _LoginScreenState
                                 .verifyOTP(
                               verificationId,
                               otpController.text,
-                            );
+                            ).timeout(const Duration(seconds: 15), onTimeout: () => throw Exception("OTP verification timed out"));
 
-                            await handleLoginSuccess();
+                            await handleLoginSuccess().timeout(const Duration(seconds: 15), onTimeout: () => throw Exception("Firestore connection timed out"));
 
                           } catch (e) {
 
@@ -205,6 +206,28 @@ class _LoginScreenState
                             : "Send OTP",
                       ),
               ),
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // DEV BYPASS BUTTON
+            TextButton(
+              onPressed: () {
+                // Hardcode a dummy user so we can bypass Firebase Auth
+                UserService.currentUser = UserModel(
+                  uid: 'dev-user-123',
+                  name: 'Dev User',
+                  phone: '+919518563596',
+                  role: 'farmer',
+                  preferredLanguage: 'en',
+                );
+                
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const DashboardScreen()),
+                );
+              },
+              child: const Text("Bypass Login (Dev Mode)", style: TextStyle(color: Colors.grey)),
             ),
           ],
         ),
