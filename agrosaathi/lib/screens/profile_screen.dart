@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/user_service.dart';
-import 'login_screen.dart';
 
 class ProfileScreen
     extends StatelessWidget {
@@ -83,13 +82,11 @@ class ProfileScreen
 
           ElevatedButton(
             onPressed: () async {
-              await FirebaseAuth.instance.signOut();
-              if (context.mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (context) => const LoginScreen()),
-                  (route) => false,
-                );
-              }
+
+              await FirebaseAuth
+                  .instance
+                  .signOut();
+
             },
 
             child:
