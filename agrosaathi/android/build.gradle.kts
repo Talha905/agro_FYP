@@ -6,16 +6,23 @@ allprojects {
 }
 
 // Provide fallback sdk versions for older plugins
-extra.set("compileSdkVersion", 35)
+extra.set("compileSdkVersion", 36)
 extra.set("minSdkVersion", 24)
-extra.set("targetSdkVersion", 35)
+extra.set("targetSdkVersion", 36)
+extra.set("ndkVersion", "27.0.12077973")
 
 subprojects {
+    extra.set("compileSdkVersion", 36)
+    extra.set("minSdkVersion", 24)
+    extra.set("targetSdkVersion", 36)
+    extra.set("ndkVersion", "27.0.12077973")
+
     plugins.withId("com.android.library") {
         val androidExt = extensions.getByName("android")
         if (androidExt is org.gradle.api.plugins.ExtensionAware) {
             try {
                 androidExt.extensions.extraProperties.set("flutter", this@subprojects.project)
+                androidExt.extensions.extraProperties.set("ndkVersion", "27.0.12077973")
             } catch (e: Exception) {}
         }
     }

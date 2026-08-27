@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.example.agrosaathi"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -22,7 +22,7 @@ android {
         applicationId = "com.example.agrosaathi"
 
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
 
         versionCode = flutter.versionCode
         versionName = flutter.versionName
