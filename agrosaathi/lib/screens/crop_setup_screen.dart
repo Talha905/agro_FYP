@@ -8,8 +8,8 @@ import '../services/growth_plan_service.dart';
 import '../services/notification_service.dart';
 import '../services/user_service.dart';
 
-/// Screen to create a growth plan, calling Gemini AI backend (/generate-growth-plan)
-/// with fallback to local static agronomic templates.
+/// Screen to create a growth plan powered by Gemini AI backend (/generate-growth-plan).
+/// From feature-recommender branch.
 class CropSetupScreen extends StatefulWidget {
   final String? initialCropName;
 
@@ -20,128 +20,121 @@ class CropSetupScreen extends StatefulWidget {
 }
 
 class _CropSetupScreenState extends State<CropSetupScreen> {
-  final TextEditingController _customCropController = TextEditingController();
-  CropGrowthTemplate? selectedCrop;
+  late final TextEditingController _cropController;
+  late final TextEditingController _soilController;
+  late final TextEditingController _seasonController;
+
   DateTime? plantingDate = DateTime.now();
-  bool isCustom = false;
   bool saving = false;
-  bool isGeneratingAI = false;
+  String? statusMessage;
 
   final GrowthPlanService _planService = GrowthPlanService();
 
   @override
   void initState() {
     super.initState();
-    if (widget.initialCropName != null && widget.initialCropName!.isNotEmpty) {
-      final matched = CropTemplates.all.firstWhere(
-        (t) => t.displayName.toLowerCase() == widget.initialCropName!.toLowerCase() ||
-            t.cropSlug.toLowerCase() == widget.initialCropName!.toLowerCase(),
-        orElse: () {
-          isCustom = true;
-          _customCropController.text = widget.initialCropName!;
-          return CropTemplates.all.first;
-        },
-      );
-      if (!isCustom) {
-        selectedCrop = matched;
-      }
-    } else {
-      selectedCrop = CropTemplates.all.first;
-    }
+    _cropController = TextEditingController(text: widget.initialCropName ?? '');
+    
+    final user = UserService.currentUser;
+    final defaultSoil = user?.farmDetails?['defaultSoilType']?.toString() ?? 'black cotton soil';
+    _soilController = TextEditingController(text: defaultSoil);
+    _seasonController = TextEditingController(text: 'kharif');
   }
 
   @override
   void dispose() {
-    _customCropController.dispose();
+    _cropController.dispose();
+    _soilController.dispose();
+    _seasonController.dispose();
     super.dispose();
   }
 
+  /// Finds a static template whose slug or display name loosely matches
+  /// what the farmer typed — used only as a fallback when the AI call fails.
+  CropGrowthTemplate? _matchStaticTemplate(String typedName) {
+    final normalized = typedName.trim().toLowerCase();
+    for (final t in CropTemplates.all) {
+      if (t.cropSlug == normalized || t.displayName.toLowerCase() == normalized) {
+        return t;
+      }
+    }
+    return CropTemplates.generic(typedName);
+  }
+
   Future<void> _submit() async {
-    final cropName = isCustom
-        ? _customCropController.text.trim()
-        : selectedCrop?.displayName;
+    final cropName = _cropController.text.trim();
 
-    if (cropName == null || cropName.isEmpty || plantingDate == null) {
+    if (cropName.isEmpty || plantingDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a crop name and select a planting date')),
+        const SnackBar(content: Text('Please enter a crop name and planting date')),
       );
       return;
     }
 
-    final farmerId = UserService.currentUser?.uid;
-    if (farmerId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You need to be signed in to create a plan')),
-      );
-      return;
-    }
+    final farmerId = UserService.currentUser?.uid ?? 'demo_farmer_101';
 
     setState(() {
       saving = true;
-      isGeneratingAI = true;
+      statusMessage = 'Asking AI to design your ${cropName.isEmpty ? 'crop' : cropName} plan…';
     });
 
-    try {
-      CropGrowthTemplate templateToUse;
-      final user = UserService.currentUser;
-      final soilType = user?.farmDetails?['defaultSoilType'] as String?;
+    CropGrowthTemplate? template;
 
-      // 1. Send Request to FastAPI Gemini AI Endpoint (/generate-growth-plan)
-      try {
-        templateToUse = await AIGrowthPlanService.generate(
-          cropName: cropName,
-          soilType: soilType,
-          season: 'Kharif',
-        );
+    try {
+      template = await AIGrowthPlanService.generate(
+        cropName: cropName,
+        soilType: _soilController.text.trim().isEmpty ? null : _soilController.text.trim(),
+        season: _seasonController.text.trim().isEmpty ? null : _seasonController.text.trim(),
+      );
+    } catch (e) {
+      debugPrint('AI generation failed: $e');
+      final fallback = _matchStaticTemplate(cropName);
+      if (fallback != null) {
+        template = fallback;
+        setState(() => statusMessage = 'AI unavailable — using template for ${fallback.displayName} instead.');
+        await Future.delayed(const Duration(seconds: 1));
+      } else {
+        setState(() {
+          saving = false;
+          statusMessage = null;
+        });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Generated agronomic plan using Gemini AI! ✨'),
-              backgroundColor: AppColors.primary,
+            SnackBar(
+              content: Text(
+                'Couldn\'t generate a plan for "$cropName" right now (${e.toString()}).',
+              ),
             ),
           );
         }
-      } catch (aiError) {
-        debugPrint('Gemini AI Generation error (using template fallback): $aiError');
-        // Fallback to local template matching
-        templateToUse = selectedCrop ??
-            CropTemplates.all.firstWhere(
-              (t) => t.displayName.toLowerCase() == cropName.toLowerCase(),
-              orElse: () => CropTemplates.generic(cropName),
-            );
+        return;
       }
+    }
 
-      // 2. Generate GrowthPlan document with stage dates
+    try {
       final plan = GrowthPlanGenerator.generate(
         farmerId: farmerId,
-        template: templateToUse,
+        template: template,
         plantingDate: plantingDate!,
       );
 
-      // 3. Save to Firestore
       final planId = await _planService.createPlan(plan);
-
-      // 4. Schedule local reminders
+      
       try {
         await NotificationService.scheduleForPlan(planId, plan);
       } catch (notificationError) {
-        debugPrint('Notification scheduling failed (plan saved): $notificationError');
+        debugPrint('Notification scheduling error: $notificationError');
       }
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to create plan: $e')),
+          SnackBar(content: Text('Failed to save plan: $e')),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          saving = false;
-          isGeneratingAI = false;
-        });
-      }
+      if (mounted) setState(() => saving = false);
     }
   }
 
@@ -155,68 +148,65 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Mode Segment Switcher
-            Row(
-              children: [
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Text('Preset Crops'),
-                    selected: !isCustom,
-                    onSelected: (val) {
-                      if (val) setState(() => isCustom = false);
-                    },
-                    selectedColor: AppColors.primaryLight,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Text('Custom AI Crop ✨'),
-                    selected: isCustom,
-                    onSelected: (val) {
-                      if (val) setState(() => isCustom = true);
-                    },
-                    selectedColor: AppColors.primaryLight,
-                  ),
-                ),
-              ],
+            const Text('Crop Name', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _cropController,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                hintText: 'e.g. Wheat, Okra, Turmeric, Garlic…',
+                prefixIcon: const Icon(Icons.auto_awesome, color: AppColors.primary),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 8),
+            
+            // Quick Suggestion Chips
+            Wrap(
+              spacing: 8,
+              children: ['Wheat', 'Rice', 'Cotton', 'Sugarcane', 'Tomato', 'Onion', 'Turmeric']
+                  .map((crop) => ActionChip(
+                        label: Text(crop, style: const TextStyle(fontSize: 12)),
+                        backgroundColor: AppColors.primaryLight,
+                        onPressed: () {
+                          _cropController.text = crop;
+                          setState(() {});
+                        },
+                      ))
+                  .toList(),
+            ),
+            const SizedBox(height: 16),
 
-            if (!isCustom) ...[
-              const Text('Select Pre-configured Crop', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<CropGrowthTemplate>(
-                value: selectedCrop,
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                ),
-                hint: const Text('Select a crop'),
-                items: CropTemplates.all
-                    .map((t) => DropdownMenuItem(value: t, child: Text(t.displayName)))
-                    .toList(),
-                onChanged: (value) => setState(() => selectedCrop = value),
+            const Text('Soil type (optional)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _soilController,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                hintText: 'e.g. black cotton soil, loamy…',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
-            ] else ...[
-              const Text('Enter Any Crop Name (Gemini AI Powered)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _customCropController,
-                decoration: InputDecoration(
-                  hintText: 'e.g. Turmeric, Garlic, Chili, Papaya...',
-                  filled: true,
-                  fillColor: Colors.white,
-                  prefixIcon: const Icon(Icons.auto_awesome, color: AppColors.primary),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                ),
-              ),
-            ],
+            ),
+            const SizedBox(height: 16),
 
+            const Text('Season (optional)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _seasonController,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                hintText: 'e.g. rabi, kharif…',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
             const SizedBox(height: 24),
+
             const Text('Planting Date', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             InkWell(
@@ -246,29 +236,25 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
               ),
             ),
 
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.primaryLight,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
-              ),
-              child: const Row(
+            if (statusMessage != null) ...[
+              const SizedBox(height: 16),
+              Row(
                 children: [
-                  Icon(Icons.auto_awesome, color: AppColors.primary, size: 22),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'AI Generation queries Gemini on the FastAPI backend to build customized stage timelines, irrigation intervals, and fertilizer plans.',
-                      style: TextStyle(fontSize: 12, color: AppColors.primaryDark),
+                  if (saving)
+                    const SizedBox(
+                      height: 14,
+                      width: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
                     ),
+                  if (saving) const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(statusMessage!, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 40),
+            ],
 
+            const SizedBox(height: 32),
             SizedBox(
               width: double.infinity,
               height: 50,
@@ -278,9 +264,7 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                icon: saving
-                    ? const SizedBox.shrink()
-                    : const Icon(Icons.auto_awesome, size: 18),
+                icon: saving ? const SizedBox.shrink() : const Icon(Icons.auto_awesome, size: 18),
                 onPressed: saving ? null : _submit,
                 label: saving
                     ? const Row(
@@ -292,10 +276,10 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
                             child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                           ),
                           SizedBox(width: 12),
-                          Text('Generating with Gemini AI...'),
+                          Text('Querying Gemini AI...'),
                         ],
                       )
-                    : const Text('Generate Growth Plan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    : const Text('Create Growth Plan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
           ],
