@@ -34,7 +34,7 @@ class AIGrowthPlanService {
             if (region != null) 'region': region,
           }),
         )
-        .timeout(const Duration(seconds: 20));
+        .timeout(const Duration(seconds: 60));
 
     if (response.statusCode != 200) {
       throw Exception('Backend returned ${response.statusCode}');
