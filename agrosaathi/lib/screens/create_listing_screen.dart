@@ -209,7 +209,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                   Row(
                     children: [
                       Expanded(
-                        flex: 2,
+                        flex: 3,
                         child: TextFormField(
                           controller: _quantityController,
                           keyboardType: TextInputType.number,
@@ -218,10 +218,11 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                           validator: (v) => v!.isEmpty ? 'Required' : null,
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 12),
                       Expanded(
-                        flex: 1,
+                        flex: 2,
                         child: DropdownButtonFormField<String>(
+                          isExpanded: true,
                           value: _selectedUnit,
                           items: ['kg', 'quintal'].map((u) => DropdownMenuItem(value: u, child: Text(u, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
                           onChanged: (val) => setState(() => _selectedUnit = val!),

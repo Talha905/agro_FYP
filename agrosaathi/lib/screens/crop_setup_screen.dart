@@ -1,29 +1,69 @@
 import 'package:flutter/material.dart';
+
 import '../constants/app_colors.dart';
 import '../data/crop_growth_templates.dart';
+import '../services/ai_growth_plan_service.dart';
 import '../services/growth_plan_generator.dart';
 import '../services/growth_plan_service.dart';
 import '../services/notification_service.dart';
 import '../services/user_service.dart';
 
+/// Screen to create a growth plan, calling Gemini AI backend (/generate-growth-plan)
+/// with fallback to local static agronomic templates.
 class CropSetupScreen extends StatefulWidget {
-  const CropSetupScreen({super.key});
+  final String? initialCropName;
+
+  const CropSetupScreen({super.key, this.initialCropName});
 
   @override
   State<CropSetupScreen> createState() => _CropSetupScreenState();
 }
 
 class _CropSetupScreenState extends State<CropSetupScreen> {
+  final TextEditingController _customCropController = TextEditingController();
   CropGrowthTemplate? selectedCrop;
-  DateTime? plantingDate;
+  DateTime? plantingDate = DateTime.now();
+  bool isCustom = false;
   bool saving = false;
+  bool isGeneratingAI = false;
 
   final GrowthPlanService _planService = GrowthPlanService();
 
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialCropName != null && widget.initialCropName!.isNotEmpty) {
+      final matched = CropTemplates.all.firstWhere(
+        (t) => t.displayName.toLowerCase() == widget.initialCropName!.toLowerCase() ||
+            t.cropSlug.toLowerCase() == widget.initialCropName!.toLowerCase(),
+        orElse: () {
+          isCustom = true;
+          _customCropController.text = widget.initialCropName!;
+          return CropTemplates.all.first;
+        },
+      );
+      if (!isCustom) {
+        selectedCrop = matched;
+      }
+    } else {
+      selectedCrop = CropTemplates.all.first;
+    }
+  }
+
+  @override
+  void dispose() {
+    _customCropController.dispose();
+    super.dispose();
+  }
+
   Future<void> _submit() async {
-    if (selectedCrop == null || plantingDate == null) {
+    final cropName = isCustom
+        ? _customCropController.text.trim()
+        : selectedCrop?.displayName;
+
+    if (cropName == null || cropName.isEmpty || plantingDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a crop and planting date')),
+        const SnackBar(content: Text('Please enter a crop name and select a planting date')),
       );
       return;
     }
@@ -36,23 +76,56 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
       return;
     }
 
-    setState(() => saving = true);
+    setState(() {
+      saving = true;
+      isGeneratingAI = true;
+    });
 
     try {
+      CropGrowthTemplate templateToUse;
+      final user = UserService.currentUser;
+      final soilType = user?.farmDetails?['defaultSoilType'] as String?;
+
+      // 1. Send Request to FastAPI Gemini AI Endpoint (/generate-growth-plan)
+      try {
+        templateToUse = await AIGrowthPlanService.generate(
+          cropName: cropName,
+          soilType: soilType,
+          season: 'Kharif',
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Generated agronomic plan using Gemini AI! ✨'),
+              backgroundColor: AppColors.primary,
+            ),
+          );
+        }
+      } catch (aiError) {
+        debugPrint('Gemini AI Generation error (using template fallback): $aiError');
+        // Fallback to local template matching
+        templateToUse = selectedCrop ??
+            CropTemplates.all.firstWhere(
+              (t) => t.displayName.toLowerCase() == cropName.toLowerCase(),
+              orElse: () => CropTemplates.generic(cropName),
+            );
+      }
+
+      // 2. Generate GrowthPlan document with stage dates
       final plan = GrowthPlanGenerator.generate(
         farmerId: farmerId,
-        template: selectedCrop!,
+        template: templateToUse,
         plantingDate: plantingDate!,
       );
 
+      // 3. Save to Firestore
       final planId = await _planService.createPlan(plan);
 
-      // Notifications are a nice-to-have on top of a successfully saved plan —
-      // don't let a permissions/OS quirk make this look like plan creation failed.
+      // 4. Schedule local reminders
       try {
         await NotificationService.scheduleForPlan(planId, plan);
       } catch (notificationError) {
-        debugPrint('Notification scheduling failed (plan was still saved): $notificationError');
+        debugPrint('Notification scheduling failed (plan saved): $notificationError');
       }
 
       if (mounted) Navigator.pop(context);
@@ -63,7 +136,12 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => saving = false);
+      if (mounted) {
+        setState(() {
+          saving = false;
+          isGeneratingAI = false;
+        });
+      }
     }
   }
 
@@ -72,27 +150,72 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('Start a New Growth Plan')),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Crop', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<CropGrowthTemplate>(
-              initialValue: selectedCrop,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              ),
-              hint: const Text('Select a crop'),
-              items: CropTemplates.all
-                  .map((t) => DropdownMenuItem(value: t, child: Text(t.displayName)))
-                  .toList(),
-              onChanged: (value) => setState(() => selectedCrop = value),
+            // Mode Segment Switcher
+            Row(
+              children: [
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Text('Preset Crops'),
+                    selected: !isCustom,
+                    onSelected: (val) {
+                      if (val) setState(() => isCustom = false);
+                    },
+                    selectedColor: AppColors.primaryLight,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Text('Custom AI Crop ✨'),
+                    selected: isCustom,
+                    onSelected: (val) {
+                      if (val) setState(() => isCustom = true);
+                    },
+                    selectedColor: AppColors.primaryLight,
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 20),
+
+            if (!isCustom) ...[
+              const Text('Select Pre-configured Crop', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<CropGrowthTemplate>(
+                value: selectedCrop,
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                ),
+                hint: const Text('Select a crop'),
+                items: CropTemplates.all
+                    .map((t) => DropdownMenuItem(value: t, child: Text(t.displayName)))
+                    .toList(),
+                onChanged: (value) => setState(() => selectedCrop = value),
+              ),
+            ] else ...[
+              const Text('Enter Any Crop Name (Gemini AI Powered)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _customCropController,
+                decoration: InputDecoration(
+                  hintText: 'e.g. Turmeric, Garlic, Chili, Papaya...',
+                  filled: true,
+                  fillColor: Colors.white,
+                  prefixIcon: const Icon(Icons.auto_awesome, color: AppColors.primary),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                ),
+              ),
+            ],
+
             const SizedBox(height: 24),
             const Text('Planting Date', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
@@ -101,9 +224,9 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
               onTap: () async {
                 final picked = await showDatePicker(
                   context: context,
-                  initialDate: DateTime.now(),
-                  firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                  lastDate: DateTime.now().add(const Duration(days: 30)),
+                  initialDate: plantingDate ?? DateTime.now(),
+                  firstDate: DateTime.now().subtract(const Duration(days: 90)),
+                  lastDate: DateTime.now().add(const Duration(days: 90)),
                 );
                 if (picked != null) setState(() => plantingDate = picked);
               },
@@ -113,6 +236,7 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
                   fillColor: Colors.white,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  prefixIcon: const Icon(Icons.calendar_today, color: AppColors.primary),
                 ),
                 child: Text(
                   plantingDate == null
@@ -121,30 +245,57 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
                 ),
               ),
             ),
-            if (selectedCrop != null) ...[
-              const SizedBox(height: 16),
-              Text(
-                'Expected cycle length: ${selectedCrop!.totalDurationDays} days',
-                style: const TextStyle(color: AppColors.textSecondary),
+
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
               ),
-            ],
-            const Spacer(),
+              child: const Row(
+                children: [
+                  Icon(Icons.auto_awesome, color: AppColors.primary, size: 22),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'AI Generation queries Gemini on the FastAPI backend to build customized stage timelines, irrigation intervals, and fertilizer plans.',
+                      style: TextStyle(fontSize: 12, color: AppColors.primaryDark),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 40),
+
             SizedBox(
               width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
+              height: 50,
+              child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
+                icon: saving
+                    ? const SizedBox.shrink()
+                    : const Icon(Icons.auto_awesome, size: 18),
                 onPressed: saving ? null : _submit,
-                child: saving
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                label: saving
+                    ? const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          ),
+                          SizedBox(width: 12),
+                          Text('Generating with Gemini AI...'),
+                        ],
                       )
-                    : const Text('Create Growth Plan', style: TextStyle(color: Colors.white)),
+                    : const Text('Generate Growth Plan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
           ],
