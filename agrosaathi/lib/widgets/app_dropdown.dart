@@ -14,6 +14,7 @@ class AppDropdownItem<T> {
 }
 
 /// Accessible Dropdown with distinct top label.
+/// Overflow-proof with isExpanded and text ellipsis.
 class AppDropdown<T> extends StatelessWidget {
   final String label;
   final T? value;
@@ -39,12 +40,16 @@ class AppDropdown<T> extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
               ),
             ),
             if (isRequired)
@@ -57,7 +62,14 @@ class AppDropdown<T> extends StatelessWidget {
         const SizedBox(height: 6),
         DropdownButtonFormField<T>(
           initialValue: value,
-          hint: hint != null ? Text(hint!) : null,
+          isExpanded: true,
+          hint: hint != null
+              ? Text(
+                  hint!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                )
+              : null,
           items: items.map((item) {
             return DropdownMenuItem<T>(
               value: item.value,
@@ -67,7 +79,13 @@ class AppDropdown<T> extends StatelessWidget {
                     Icon(item.icon, size: 18, color: AppColors.primary),
                     const SizedBox(width: 8),
                   ],
-                  Text(item.label),
+                  Expanded(
+                    child: Text(
+                      item.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
             );

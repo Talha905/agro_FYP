@@ -2,11 +2,19 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
+import tensorflow as tf
 import numpy as np
 import pickle
 import os
+import json
+import re
 from PIL import Image
 import io
+import google.generativeai as genai
+from anthropic import Anthropic
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI(title="AgroSaathi ML Backend", version="1.0.0")
 
@@ -237,4 +245,155 @@ def recommend_crop(req: CropRecommendationRequest):
             "recommendations": recommendations
         }
     except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ----------------------------------------
+# Growth Plan Generation (Growth Planner module)
+# ----------------------------------------
+# Person D's crop_setup_screen.dart calls this with a free-text crop name
+# (+ optional soil/season/region). On any failure here, the Flutter client
+# falls back to its local static templates — this endpoint returning
+# {"success": False} is an expected, handled outcome, not a server bug.
+
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+
+# Must exactly match the stage enum used by GrowthPlan.currentStage and the
+# fixed Timeline tab in growth_plan_detail_screen.dart. "harvested" is
+# intentionally excluded — it's a terminal status set manually, not a timed stage.
+ALLOWED_STAGES = {"sowing", "germination", "vegetative", "flowering", "maturity"}
+
+GROWTH_PLAN_SYSTEM_PROMPT = """You are an agronomy assistant for AgroSaathi, a farming app used in Maharashtra, India.
+Given a crop name and optional growing conditions, output ONLY a JSON object (no markdown fences, no prose before or after) with this exact shape:
+
+{
+  "cropName": "string, proper-cased crop name",
+  "stages": [
+    {
+      "name": "one of: sowing, germination, vegetative, flowering, maturity",
+      "durationDays": integer > 0,
+      "irrigationFrequencyDays": integer > 0,
+      "pestRisks": ["short pest or disease name", ...]  // can be empty array
+    }
+  ],
+  "fertilizerPlan": [
+    {
+      "stageName": "must match one of the stage names above",
+      "fertilizerType": "short string, e.g. 'Basal NPK'",
+      "dayOffsetInStage": integer >= 0
+    }
+  ]
+}
+
+Rules:
+- Include exactly one entry per stage, in this order: sowing, germination, vegetative, flowering, maturity.
+- Base durations and irrigation frequency on real agronomic practice for the given crop and, if provided, the soil/season/region.
+- pestRisks should list realistic risks specific to that growth stage, not a generic list repeated on every stage.
+- fertilizerPlan should have 1-3 realistic entries total across the whole cycle.
+- If the input isn't a real, growable crop, respond with {"error": "not a recognized crop"} instead."""
+
+# "-latest" is Google's documented durable alias: it auto-swaps to their
+# current recommended Flash model, so this doesn't break every time they
+# rename/retire a dated model string (which happens often). If you specifically
+# want to pin a version instead, check the live list at
+# https://ai.google.dev/gemini-api/docs/models before hardcoding one.
+gemini_model = genai.GenerativeModel(
+    "gemini-flash-latest",
+    system_instruction=GROWTH_PLAN_SYSTEM_PROMPT,
+)
+
+
+class GrowthPlanRequest(BaseModel):
+    cropName: str
+    soilType: str | None = None
+    season: str | None = None
+    region: str | None = None
+
+
+def _extract_json(text: str) -> dict:
+    # Gemini is set to JSON response mode so this should already be clean,
+    # but strip surrounding text defensively in case that ever changes.
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise ValueError("no JSON object found in model output")
+    return json.loads(match.group(0))
+
+
+def _validate_template(data: dict) -> None:
+    if "error" in data:
+        raise ValueError(data["error"])
+
+    stages = data.get("stages")
+    if not isinstance(stages, list) or len(stages) != 5:
+        raise ValueError("expected exactly 5 stages")
+
+    seen_names = [s.get("name") for s in stages]
+    if seen_names != ["sowing", "germination", "vegetative", "flowering", "maturity"]:
+        raise ValueError(f"stages out of order or invalid: {seen_names}")
+
+    for stage in stages:
+        if not isinstance(stage.get("durationDays"), int) or stage["durationDays"] <= 0:
+            raise ValueError(f"invalid durationDays for stage {stage.get('name')}")
+        if not isinstance(stage.get("irrigationFrequencyDays"), int) or stage["irrigationFrequencyDays"] <= 0:
+            raise ValueError(f"invalid irrigationFrequencyDays for stage {stage.get('name')}")
+
+    for step in data.get("fertilizerPlan", []):
+        if step.get("stageName") not in ALLOWED_STAGES:
+            raise ValueError(f"fertilizerPlan references unknown stage: {step.get('stageName')}")
+
+
+# ----------------------------------------
+# In-memory cache
+# ----------------------------------------
+# Same crop + same conditions = same plan is a reasonable assumption here
+# (it's agronomic reference data, not something that changes moment to
+# moment). Cutting repeat Gemini calls during dev/demo directly saves
+# quota. Resets on server restart — fine for FYP scale; swap for Redis or
+# a Firestore-backed cache if this ever needs to survive restarts / be
+# shared across multiple backend instances.
+_growth_plan_cache: dict[str, dict] = {}
+
+
+def _cache_key(request: "GrowthPlanRequest") -> str:
+    return "|".join([
+        request.cropName.strip().lower(),
+        (request.soilType or "").strip().lower(),
+        (request.season or "").strip().lower(),
+        (request.region or "").strip().lower(),
+    ])
+
+
+@app.post("/generate-growth-plan")
+async def generate_growth_plan(request: GrowthPlanRequest):
+    cache_key = _cache_key(request)
+    if cache_key in _growth_plan_cache:
+        return {"success": True, "template": _growth_plan_cache[cache_key], "cached": True}
+
+    try:
+        context_parts = [f"Crop: {request.cropName}"]
+        if request.soilType:
+            context_parts.append(f"Soil type: {request.soilType}")
+        if request.season:
+            context_parts.append(f"Season: {request.season}")
+        if request.region:
+            context_parts.append(f"Region: {request.region}")
+
+        response = gemini_model.generate_content(
+            "\n".join(context_parts),
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",  # Gemini enforces valid JSON output directly
+            ),
+        )
+
+        raw_text = response.text
+
+        data = _extract_json(raw_text)
+        _validate_template(data)
+
+        _growth_plan_cache[cache_key] = data  # only cache validated successes, never errors
+
+        return {"success": True, "template": data}
+
+    except Exception as e:
+        # Client treats any success:false as "fall back to static templates".
         return {"success": False, "error": str(e)}

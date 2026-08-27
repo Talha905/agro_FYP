@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../data/crop_growth_templates.dart';
+import '../services/ai_growth_plan_service.dart';
 import '../services/growth_plan_generator.dart';
 import '../services/growth_plan_service.dart';
 import '../services/notification_service.dart';
@@ -14,16 +15,42 @@ class CropSetupScreen extends StatefulWidget {
 }
 
 class _CropSetupScreenState extends State<CropSetupScreen> {
-  CropGrowthTemplate? selectedCrop;
+  final _cropController = TextEditingController();
+  final _soilController = TextEditingController();
+  final _seasonController = TextEditingController();
+
   DateTime? plantingDate;
   bool saving = false;
+  String? statusMessage; // shown while AI call is in flight / on fallback
 
   final GrowthPlanService _planService = GrowthPlanService();
 
+  @override
+  void dispose() {
+    _cropController.dispose();
+    _soilController.dispose();
+    _seasonController.dispose();
+    super.dispose();
+  }
+
+  /// Finds a static template whose slug or display name loosely matches
+  /// what the farmer typed — used only as a fallback when the AI call fails.
+  CropGrowthTemplate? _matchStaticTemplate(String typedName) {
+    final normalized = typedName.trim().toLowerCase();
+    for (final t in CropTemplates.all) {
+      if (t.cropSlug == normalized || t.displayName.toLowerCase() == normalized) {
+        return t;
+      }
+    }
+    return null;
+  }
+
   Future<void> _submit() async {
-    if (selectedCrop == null || plantingDate == null) {
+    final cropName = _cropController.text.trim();
+
+    if (cropName.isEmpty || plantingDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a crop and planting date')),
+        const SnackBar(content: Text('Please enter a crop name and planting date')),
       );
       return;
     }
@@ -36,30 +63,62 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
       return;
     }
 
-    setState(() => saving = true);
+    setState(() {
+      saving = true;
+      statusMessage = 'Asking AI to design your ${cropName.isEmpty ? 'crop' : cropName} plan…';
+    });
+
+    CropGrowthTemplate? template;
+
+    try {
+      template = await AIGrowthPlanService.generate(
+        cropName: cropName,
+        soilType: _soilController.text.trim().isEmpty ? null : _soilController.text.trim(),
+        season: _seasonController.text.trim().isEmpty ? null : _seasonController.text.trim(),
+      );
+    } catch (e) {
+      // AI failed (offline, backend down, unrecognized crop, etc).
+      // Fall back to a static template only if the typed name matches one
+      // of our 7 known crops — otherwise we genuinely can't build a plan.
+      final fallback = _matchStaticTemplate(cropName);
+      if (fallback != null) {
+        template = fallback;
+        setState(() => statusMessage = 'AI unavailable — using a saved template for ${fallback.displayName} instead.');
+        await Future.delayed(const Duration(seconds: 1)); // let the farmer read the message
+      } else {
+        setState(() {
+          saving = false;
+          statusMessage = null;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Couldn\'t generate a plan for "$cropName" right now (${e.toString()}). '
+                'Check your connection, or try a common crop name like Wheat or Rice.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+    }
 
     try {
       final plan = GrowthPlanGenerator.generate(
         farmerId: farmerId,
-        template: selectedCrop!,
+        template: template,
         plantingDate: plantingDate!,
       );
 
       final planId = await _planService.createPlan(plan);
-
-      // Notifications are a nice-to-have on top of a successfully saved plan —
-      // don't let a permissions/OS quirk make this look like plan creation failed.
-      try {
-        await NotificationService.scheduleForPlan(planId, plan);
-      } catch (notificationError) {
-        debugPrint('Notification scheduling failed (plan was still saved): $notificationError');
-      }
+      await NotificationService.scheduleForPlan(planId, plan);
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to create plan: $e')),
+          SnackBar(content: Text('Failed to save plan: $e')),
         );
       }
     } finally {
@@ -72,28 +131,53 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('Start a New Growth Plan')),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Crop', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
-            DropdownButtonFormField<CropGrowthTemplate>(
-              initialValue: selectedCrop,
+            TextField(
+              controller: _cropController,
               decoration: InputDecoration(
                 filled: true,
                 fillColor: Colors.white,
+                hintText: 'e.g. Wheat, Okra, Turmeric…',
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
-              hint: const Text('Select a crop'),
-              items: CropTemplates.all
-                  .map((t) => DropdownMenuItem(value: t, child: Text(t.displayName)))
-                  .toList(),
-              onChanged: (value) => setState(() => selectedCrop = value),
+            ),
+            const SizedBox(height: 16),
+
+            const Text('Soil type (optional)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _soilController,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                hintText: 'e.g. black cotton soil, loamy…',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            const Text('Season (optional)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _seasonController,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                hintText: 'e.g. rabi, kharif…',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
             ),
             const SizedBox(height: 24),
+
             const Text('Planting Date', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             InkWell(
@@ -121,14 +205,26 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
                 ),
               ),
             ),
-            if (selectedCrop != null) ...[
+
+            if (statusMessage != null) ...[
               const SizedBox(height: 16),
-              Text(
-                'Expected cycle length: ${selectedCrop!.totalDurationDays} days',
-                style: const TextStyle(color: AppColors.textSecondary),
+              Row(
+                children: [
+                  if (saving)
+                    const SizedBox(
+                      height: 14,
+                      width: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent),
+                    ),
+                  if (saving) const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(statusMessage!, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                  ),
+                ],
               ),
             ],
-            const Spacer(),
+
+            const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               height: 48,
