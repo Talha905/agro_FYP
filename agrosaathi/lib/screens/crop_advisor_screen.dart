@@ -516,7 +516,7 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: records.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          separatorBuilder: (ctx, idx) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
             final record = records[index];
             final topCrop = record.output.firstOrNull;

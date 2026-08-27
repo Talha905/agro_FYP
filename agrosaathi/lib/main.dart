@@ -33,7 +33,7 @@ class MyApp extends StatelessWidget {
           title: 'AgroSaathi',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme.copyWith(
-            pageTransitionsTheme: const PageTransitionsTheme(
+            pageTransitionsTheme: PageTransitionsTheme(
               builders: {
                 TargetPlatform.android: CupertinoPageTransitionsBuilder(),
                 TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
