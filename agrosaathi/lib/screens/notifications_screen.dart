@@ -197,7 +197,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: items.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      separatorBuilder: (ctx, idx) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final item = items[index];
         final typeColor = _getTypeColor(item.type);
