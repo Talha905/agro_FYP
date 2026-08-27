@@ -5,6 +5,22 @@ allprojects {
     }
 }
 
+// Provide fallback sdk versions for older plugins
+extra.set("compileSdkVersion", 35)
+extra.set("minSdkVersion", 24)
+extra.set("targetSdkVersion", 35)
+
+subprojects {
+    plugins.withId("com.android.library") {
+        val androidExt = extensions.getByName("android")
+        if (androidExt is org.gradle.api.plugins.ExtensionAware) {
+            try {
+                androidExt.extensions.extraProperties.set("flutter", this@subprojects.project)
+            } catch (e: Exception) {}
+        }
+    }
+}
+
 val newBuildDir: Directory =
     rootProject.layout.buildDirectory
         .dir("../../build")

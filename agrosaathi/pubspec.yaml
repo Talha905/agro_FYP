@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.12.2
+  sdk: ^3.5.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -52,11 +52,15 @@ dependencies:
 
   # Person D — weather and notifications
   flutter_local_notifications: ^17.0.0
+  timezone: ^0.9.4
 
-  # Multilingual (if not already added)
+  # Multilingual & Invoicing
   flutter_localizations:
     sdk: flutter
-  intl: 0.20.2
+  intl: ^0.19.0
+  pdf: ^3.11.3
+  printing: ^5.14.3
+  path_provider: ^2.1.5
 
 
 dev_dependencies:
@@ -68,7 +72,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^6.0.0
+  flutter_lints: any
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -82,6 +86,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/model/plant_disease_model.tflite
     - assets/model/model.tflite
     - assets/labels.txt
 
