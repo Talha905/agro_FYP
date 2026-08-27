@@ -178,4 +178,23 @@ class CropTemplates {
     onion,
     potato,
   ];
+
+  static CropGrowthTemplate generic(String displayName) {
+    final slug = displayName.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '_');
+    return CropGrowthTemplate(
+      cropSlug: slug.isEmpty ? 'custom_crop' : slug,
+      displayName: displayName.isEmpty ? 'Custom Crop' : displayName,
+      stages: const [
+        GrowthStage(name: 'sowing', durationDays: 10, irrigationFrequencyDays: 5),
+        GrowthStage(name: 'germination', durationDays: 12, irrigationFrequencyDays: 6, pestRisks: ['General Pests']),
+        GrowthStage(name: 'vegetative', durationDays: 35, irrigationFrequencyDays: 7, pestRisks: ['Leaf Spot']),
+        GrowthStage(name: 'flowering', durationDays: 30, irrigationFrequencyDays: 7, pestRisks: ['Blight']),
+        GrowthStage(name: 'maturity', durationDays: 25, irrigationFrequencyDays: 10),
+      ],
+      fertilizerPlan: const [
+        FertilizerStep(stageName: 'sowing', fertilizerType: 'Basal NPK', dayOffsetInStage: 0),
+        FertilizerStep(stageName: 'vegetative', fertilizerType: 'Urea top dressing', dayOffsetInStage: 15),
+      ],
+    );
+  }
 }
