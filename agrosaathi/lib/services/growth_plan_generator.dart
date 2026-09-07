@@ -91,4 +91,57 @@ class GrowthPlanGenerator {
     }
     return 'maturity';
   }
+
+  /// Adaptively reschedules an active GrowthPlan when a farmer encounters delays,
+  /// shifting uncompleted tasks, stage milestones, and harvest date by `delayDays`.
+  static GrowthPlan adaptivelyReschedule(GrowthPlan plan, {required int delayDays}) {
+    final shiftDuration = Duration(days: delayDays);
+    final newHarvestDate = plan.expectedHarvestDate.add(shiftDuration);
+
+    final updatedIrrigation = plan.irrigationSchedule.map((item) {
+      final isDone = item['completed'] == true;
+      if (isDone) return item;
+      final originalDate = (item['date'] as Timestamp).toDate();
+      return {
+        ...item,
+        'date': Timestamp.fromDate(originalDate.add(shiftDuration)),
+      };
+    }).toList();
+
+    final updatedFertilizer = plan.fertilizerSchedule.map((item) {
+      final isDone = item['completed'] == true;
+      if (isDone) return item;
+      final originalDate = (item['applicationDate'] as Timestamp).toDate();
+      return {
+        ...item,
+        'applicationDate': Timestamp.fromDate(originalDate.add(shiftDuration)),
+      };
+    }).toList();
+
+    final updatedPest = plan.pestControlReminders.map((item) {
+      final isDone = item['completed'] == true;
+      if (isDone) return item;
+      final originalDate = (item['date'] as Timestamp).toDate();
+      return {
+        ...item,
+        'date': Timestamp.fromDate(originalDate.add(shiftDuration)),
+      };
+    }).toList();
+
+    return GrowthPlan(
+      id: plan.id,
+      farmerId: plan.farmerId,
+      cropId: plan.cropId,
+      cropName: plan.cropName,
+      plantingDate: plan.plantingDate,
+      expectedHarvestDate: newHarvestDate,
+      currentStage: plan.currentStage,
+      irrigationSchedule: updatedIrrigation,
+      fertilizerSchedule: updatedFertilizer,
+      pestControlReminders: updatedPest,
+      status: plan.status,
+      createdAt: plan.createdAt,
+      updatedAt: DateTime.now(),
+    );
+  }
 }

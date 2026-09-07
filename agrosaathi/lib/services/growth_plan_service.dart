@@ -106,4 +106,15 @@ class GrowthPlanService {
       }
     }
   }
+
+  /// Persists adaptively rescheduled growth plan dates in Firestore.
+  Future<void> updatePlanReschedule(GrowthPlan updatedPlan) async {
+    await firestore.collection(FirestoreCollections.growthPlans).doc(updatedPlan.id).update({
+      'expectedHarvestDate': Timestamp.fromDate(updatedPlan.expectedHarvestDate),
+      'irrigationSchedule': updatedPlan.irrigationSchedule,
+      'fertilizerSchedule': updatedPlan.fertilizerSchedule,
+      'pestControlReminders': updatedPlan.pestControlReminders,
+      'updatedAt': Timestamp.now(),
+    });
+  }
 }

@@ -10,6 +10,7 @@ import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import 'dashboard_screen.dart';
 import 'profile_setup_screen.dart';
+import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -202,6 +203,23 @@ class _LoginScreenState extends State<LoginScreen> {
                   side: const BorderSide(color: AppColors.secondary),
                   minimumSize: const Size(double.infinity, 44),
                 ),
+              ),
+              const SizedBox(height: 16),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text("Don't have an account?", style: TextStyle(color: AppColors.textSecondary)),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SignUpScreen()),
+                      );
+                    },
+                    child: const Text("Sign Up", style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                  ),
+                ],
               ),
             ],
           ),
