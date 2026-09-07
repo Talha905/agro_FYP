@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
-import '../services/firestore_service.dart';
 import '../services/localization_service.dart';
 import '../services/user_service.dart';
 import '../widgets/app_button.dart';

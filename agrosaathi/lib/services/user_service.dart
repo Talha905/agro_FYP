@@ -4,7 +4,7 @@ import '../models/user_model.dart';
 class UserService {
   static UserModel? currentUser;
 
-  Future<void> saveUserProfile(UserModel user) async {
+  static Future<void> saveUserProfile(UserModel user) async {
     await FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)

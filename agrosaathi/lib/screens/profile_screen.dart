@@ -87,7 +87,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   'defaultWaterAvailability': selectedWater,
                 };
                 final updatedUser = user.copyWith(farmDetails: updatedFarmDetails);
-                await _userService.saveUserProfile(updatedUser);
+                await UserService.saveUserProfile(updatedUser);
                 UserService.currentUser = updatedUser;
                 if (!mounted) return;
                 Navigator.pop(dialogCtx);
