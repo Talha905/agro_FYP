@@ -10,6 +10,7 @@ import '../widgets/growth_plan_card.dart';
 import '../widgets/quick_module_tile.dart';
 import '../widgets/weather_widget.dart';
 import 'crop_setup_screen.dart';
+import 'growth_plan_list_screen.dart';
 import 'growth_plan_detail_screen.dart';
 
 /// Redesigned Home Dashboard with Hero Header, Agro-Weather Card, Quick Actions & Metrics.
@@ -205,7 +206,7 @@ class HomeScreen extends StatelessWidget {
                   iconBgColor: AppColors.accentLight,
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const CropSetupScreen()),
+                    MaterialPageRoute(builder: (_) => const GrowthPlanListScreen()),
                   ),
                 ),
                 QuickModuleTile(

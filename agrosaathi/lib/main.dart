@@ -5,9 +5,9 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'constants/app_theme.dart';
 import 'firebase_options.dart';
-import 'screens/login_screen.dart';
 import 'services/localization_service.dart';
 import 'services/notification_service.dart';
+import 'widgets/auth_wrapper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,7 +55,7 @@ class MyApp extends StatelessWidget {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          home: const LoginScreen(),
+          home: const AuthWrapper(),
         );
       },
     );
