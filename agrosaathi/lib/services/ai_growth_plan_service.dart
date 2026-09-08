@@ -11,8 +11,7 @@ import '../data/crop_growth_templates.dart';
 class AIGrowthPlanService {
   // TODO: point this at your deployed backend before release.
   // For local testing against `uvicorn app:app --reload`, Android emulator
-  // reaches your host machine's localhost via 10.0.2.2, not 127.0.0.1.
-  static const String _baseUrl = 'http://10.0.2.2:8000';
+  static const String _baseUrl = 'https://agro-backend-mgba.onrender.com';
 
   /// Returns a CropGrowthTemplate on success, or throws on any failure
   /// (network error, timeout, or the backend reporting success:false).

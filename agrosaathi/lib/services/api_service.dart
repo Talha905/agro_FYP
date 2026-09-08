@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Use 10.0.2.2 for Android Emulator, or localhost / LAN IP for physical device / web
-  static const String baseUrl = "http://10.0.2.2:8000";
+  // Production Render Backend URL
+  static const String baseUrl = "https://agro-backend-mgba.onrender.com";
 
   static Future<Map<String, dynamic>> predictDisease(String imagePath) async {
     var request = http.MultipartRequest(
