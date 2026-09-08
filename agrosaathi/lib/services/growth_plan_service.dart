@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../constants/firestore_constants.dart';
 import '../data/crop_growth_templates.dart';
 import '../models/growth_plan_model.dart';
@@ -8,10 +10,32 @@ class GrowthPlanService {
   final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
   Future<String> createPlan(GrowthPlan plan) async {
-    final docRef = await firestore
-        .collection(FirestoreCollections.growthPlans)
-        .add(plan.toMap());
-    return docRef.id;
+    try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        try {
+          await FirebaseAuth.instance.signInAnonymously();
+        } catch (authErr) {
+          debugPrint('Anonymous auth notice: $authErr');
+        }
+      }
+
+      final activeUid = FirebaseAuth.instance.currentUser?.uid ?? plan.farmerId;
+      final planData = plan.toMap();
+      planData['farmerId'] = activeUid;
+
+      final docRef = await firestore
+          .collection(FirestoreCollections.growthPlans)
+          .add(planData);
+      return docRef.id;
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint('Firestore permission denied: $e');
+        throw Exception(
+          'Firebase Firestore rules blocked saving. Please enable Anonymous Auth in Firebase Console or set Firestore rules to allow writes.'
+        );
+      }
+      rethrow;
+    }
   }
 
   /// Active plans for a farmer, newest first.

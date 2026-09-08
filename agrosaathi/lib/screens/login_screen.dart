@@ -59,9 +59,17 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   /// Demo bypass login for instant testing / presentation
-  void _loginAsDemoFarmer() {
+  Future<void> _loginAsDemoFarmer() async {
+    try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+    } catch (e) {
+      debugPrint("Anonymous sign-in for demo mode: $e");
+    }
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'demo_farmer_101';
     final demoUser = UserModel(
-      uid: 'demo_farmer_101',
+      uid: uid,
       name: 'Ramesh Patil',
       phone: '+919876543210',
       role: 'Farmer',
@@ -74,6 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     UserService.currentUser = demoUser;
     LocalizationService.init();
+    if (!mounted) return;
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const DashboardScreen()),
