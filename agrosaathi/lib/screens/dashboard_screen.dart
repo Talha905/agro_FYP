@@ -44,11 +44,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
         return Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -56,17 +56,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Text(
                 LocalizationService.tr('profile_language'),
                 style: const TextStyle(
-                  fontSize: 18,
+                  fontSize: 20,
                   fontWeight: FontWeight.bold,
                   color: AppColors.textPrimary,
                 ),
               ),
               const SizedBox(height: 16),
               ListTile(
-                leading: const Icon(Icons.language, color: AppColors.primary),
-                title: const Text('English'),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                leading: const Icon(Icons.language_rounded, color: AppColors.primary),
+                title: const Text('English', style: TextStyle(fontWeight: FontWeight.bold)),
                 trailing: LocalizationService.currentLocale.value == 'en'
-                    ? const Icon(Icons.check, color: AppColors.primary)
+                    ? const Icon(Icons.check_circle_rounded, color: AppColors.primary)
                     : null,
                 onTap: () {
                   LocalizationService.setLocale('en');
@@ -75,10 +76,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.language, color: AppColors.primary),
-                title: const Text('हिन्दी (Hindi)'),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                leading: const Icon(Icons.language_rounded, color: AppColors.primary),
+                title: const Text('हिन्दी (Hindi)', style: TextStyle(fontWeight: FontWeight.bold)),
                 trailing: LocalizationService.currentLocale.value == 'hi'
-                    ? const Icon(Icons.check, color: AppColors.primary)
+                    ? const Icon(Icons.check_circle_rounded, color: AppColors.primary)
                     : null,
                 onTap: () {
                   LocalizationService.setLocale('hi');
@@ -87,10 +89,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.language, color: AppColors.primary),
-                title: const Text('मराठी (Marathi)'),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                leading: const Icon(Icons.language_rounded, color: AppColors.primary),
+                title: const Text('मराठी (Marathi)', style: TextStyle(fontWeight: FontWeight.bold)),
                 trailing: LocalizationService.currentLocale.value == 'mr'
-                    ? const Icon(Icons.check, color: AppColors.primary)
+                    ? const Icon(Icons.check_circle_rounded, color: AppColors.primary)
                     : null,
                 onTap: () {
                   LocalizationService.setLocale('mr');
@@ -121,23 +124,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
       valueListenable: LocalizationService.currentLocale,
       builder: (context, currentLang, _) {
         return Scaffold(
+          backgroundColor: AppColors.background,
           appBar: AppBar(
+            elevation: 0,
+            backgroundColor: AppColors.surface,
+            scrolledUnderElevation: 2,
             title: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: AppColors.primaryLight,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.eco, color: AppColors.primary, size: 20),
+                  child: const Icon(Icons.eco_rounded, color: AppColors.primary, size: 22),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Text(
                   LocalizationService.tr('app_title'),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
+                    fontSize: 20,
+                    color: AppColors.primaryDark,
+                    letterSpacing: -0.3,
                   ),
                 ),
               ],
@@ -145,7 +154,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             actions: [
               // Language Switcher Chip
               ActionChip(
-                avatar: const Icon(Icons.language, size: 16, color: AppColors.primary),
+                avatar: const Icon(Icons.language_rounded, size: 16, color: AppColors.primary),
                 label: Text(
                   currentLang.toUpperCase(),
                   style: const TextStyle(
@@ -169,13 +178,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     return IconButton(
                       icon: Stack(
                         children: [
-                          const Icon(Icons.notifications_outlined, color: AppColors.textPrimary),
+                          const Icon(Icons.notifications_outlined, color: AppColors.textPrimary, size: 26),
                           if (unreadCount > 0)
                             Positioned(
                               right: 0,
                               top: 0,
                               child: Container(
-                                padding: const EdgeInsets.all(3),
+                                padding: const EdgeInsets.all(4),
                                 decoration: const BoxDecoration(
                                   color: AppColors.warning,
                                   shape: BoxShape.circle,
@@ -203,7 +212,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 )
               else
                 IconButton(
-                  icon: const Icon(Icons.notifications_outlined, color: AppColors.textPrimary),
+                  icon: const Icon(Icons.notifications_outlined, color: AppColors.textPrimary, size: 26),
                   onPressed: () {
                     Navigator.push(
                       context,
@@ -218,40 +227,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
             index: selectedIndex,
             children: screens,
           ),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: selectedIndex,
-            onDestinationSelected: (index) {
-              setState(() {
-                selectedIndex = index;
-              });
-            },
-            destinations: [
-              NavigationDestination(
-                icon: const Icon(Icons.home_outlined),
-                selectedIcon: const Icon(Icons.home),
-                label: LocalizationService.tr('nav_home'),
-              ),
-              NavigationDestination(
-                icon: const Icon(Icons.psychology_outlined),
-                selectedIcon: const Icon(Icons.psychology),
-                label: LocalizationService.tr('nav_advisor'),
-              ),
-              NavigationDestination(
-                icon: const Icon(Icons.bug_report_outlined),
-                selectedIcon: const Icon(Icons.bug_report),
-                label: LocalizationService.tr('nav_disease'),
-              ),
-              NavigationDestination(
-                icon: const Icon(Icons.storefront_outlined),
-                selectedIcon: const Icon(Icons.storefront),
-                label: LocalizationService.tr('nav_market'),
-              ),
-              NavigationDestination(
-                icon: const Icon(Icons.person_outline),
-                selectedIcon: const Icon(Icons.person),
-                label: LocalizationService.tr('nav_profile'),
-              ),
-            ],
+          bottomNavigationBar: Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 16,
+                  offset: const Offset(0, -4),
+                ),
+              ],
+            ),
+            child: NavigationBar(
+              elevation: 0,
+              backgroundColor: Colors.transparent,
+              selectedIndex: selectedIndex,
+              indicatorColor: AppColors.primaryLight,
+              onDestinationSelected: (index) {
+                setState(() {
+                  selectedIndex = index;
+                });
+              },
+              destinations: [
+                NavigationDestination(
+                  icon: const Icon(Icons.home_outlined),
+                  selectedIcon: const Icon(Icons.home_rounded, color: AppColors.primary),
+                  label: LocalizationService.tr('nav_home'),
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.psychology_outlined),
+                  selectedIcon: const Icon(Icons.psychology_rounded, color: AppColors.primary),
+                  label: LocalizationService.tr('nav_advisor'),
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.bug_report_outlined),
+                  selectedIcon: const Icon(Icons.bug_report_rounded, color: AppColors.primary),
+                  label: LocalizationService.tr('nav_disease'),
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.storefront_outlined),
+                  selectedIcon: const Icon(Icons.storefront_rounded, color: AppColors.primary),
+                  label: LocalizationService.tr('nav_market'),
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.person_outline),
+                  selectedIcon: const Icon(Icons.person_rounded, color: AppColors.primary),
+                  label: LocalizationService.tr('nav_profile'),
+                ),
+              ],
+            ),
           ),
         );
       },

@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
+
 import '../constants/app_colors.dart';
 import '../models/weather_model.dart';
 import '../services/localization_service.dart';
 import '../services/weather_service.dart';
-import 'app_card.dart';
 
-/// Dynamic Agro-Weather Card for Home Dashboard.
-/// Owned by Person A. Fully responsive and multi-language enabled.
+/// Dynamic, animated Agro-Weather Header Card with condition-aware gradients.
 class WeatherWidget extends StatefulWidget {
   final VoidCallback? onAlertsTap;
 
@@ -42,16 +41,23 @@ class _WeatherWidgetState extends State<WeatherWidget> {
       case 'rainy':
       case 'drizzle':
       case 'thunderstorm':
-        return Icons.water_drop;
+        return Icons.water_drop_rounded;
       case 'clouds':
       case 'cloudy':
       case 'partly cloudy':
-        return Icons.cloud_queue;
+        return Icons.cloud_rounded;
       case 'clear':
       case 'sunny':
       default:
-        return Icons.wb_sunny_outlined;
+        return Icons.wb_sunny_rounded;
     }
+  }
+
+  LinearGradient _getWeatherGradient(bool isRain) {
+    if (isRain) {
+      return AppColors.rainyGradient;
+    }
+    return AppColors.sunnyGradient;
   }
 
   @override
@@ -63,21 +69,23 @@ class _WeatherWidgetState extends State<WeatherWidget> {
           future: _weatherFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return AppCard(
-                padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
-                child: Row(
+              return Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: AppColors.softShadow,
+                ),
+                child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const SizedBox(
+                    SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.primary),
                     ),
-                    const SizedBox(width: 12),
-                    Text(
-                      LocalizationService.tr('loading'),
-                      style: const TextStyle(color: AppColors.textSecondary),
-                    ),
+                    SizedBox(width: 12),
+                    Text('Fetching Live Weather Data...', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
                   ],
                 ),
               );
@@ -99,192 +107,207 @@ class _WeatherWidgetState extends State<WeatherWidget> {
                   lastUpdated: DateTime.now(),
                 );
 
-            return AppCard(
-              padding: const EdgeInsets.all(16),
-              backgroundColor: AppColors.surface,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            final isRain = weather.isRainExpected;
+            final gradient = _getWeatherGradient(isRain);
+
+            return Container(
+              decoration: BoxDecoration(
+                gradient: gradient,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: (isRain ? AppColors.accent : AppColors.secondary).withValues(alpha: 0.3),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Stack(
                 children: [
-                  // Location header & district switcher
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Row(
+                  // Decorative background graphics
+                  Positioned(
+                    right: -20,
+                    top: -20,
+                    child: Icon(
+                      _getWeatherIcon(weather.condition),
+                      size: 140,
+                      color: Colors.white.withValues(alpha: 0.15),
+                    ),
+                  ),
+
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Location Header & District Switcher
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Icon(Icons.location_on_outlined, size: 18, color: AppColors.accent),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                weather.location,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.textPrimary,
-                                ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
                               ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.location_on_rounded, size: 16, color: Colors.white),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    weather.location,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            PopupMenuButton<String>(
+                              onSelected: _changeDistrict,
+                              icon: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.tune_rounded, size: 16, color: Colors.white),
+                              ),
+                              itemBuilder: (context) {
+                                return WeatherService.supportedDistricts.map((district) {
+                                  return PopupMenuItem(
+                                    value: district,
+                                    child: Text(district),
+                                  );
+                                }).toList();
+                              },
                             ),
                           ],
                         ),
-                      ),
-                      PopupMenuButton<String>(
-                        onSelected: _changeDistrict,
-                        icon: const Icon(Icons.tune, size: 18, color: AppColors.textSecondary),
-                        itemBuilder: (context) {
-                          return WeatherService.supportedDistricts.map((district) {
-                            return PopupMenuItem(
-                              value: district,
-                              child: Text(district),
-                            );
-                          }).toList();
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
+                        const SizedBox(height: 16),
 
-                  // Temperature & main icon (Wrapped with Expanded to prevent overflow)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: weather.isRainExpected ? AppColors.accentLight : const Color(0xFFFFF8E1),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Icon(
-                          _getWeatherIcon(weather.condition),
-                          size: 36,
-                          color: weather.isRainExpected ? AppColors.accent : AppColors.secondary,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        // Temperature & Condition
+                        Row(
                           children: [
-                            Row(
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.25),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 1.5),
+                              ),
+                              child: Icon(_getWeatherIcon(weather.condition), size: 38, color: Colors.white),
+                            ),
+                            const SizedBox(width: 16),
+                            Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
-                                  weather.temperature.toStringAsFixed(1),
-                                  style: const TextStyle(
-                                    fontSize: 32,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textPrimary,
-                                    height: 1.0,
-                                  ),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      weather.temperature.toStringAsFixed(1),
+                                      style: const TextStyle(
+                                        fontSize: 38,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.white,
+                                        height: 1.0,
+                                      ),
+                                    ),
+                                    const Text(
+                                      '°C',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const Text(
-                                  '°C',
-                                  style: TextStyle(
-                                    fontSize: 18,
+                                const SizedBox(height: 4),
+                                Text(
+                                  weather.getLocalizedCondition(langCode),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.white,
                                     fontWeight: FontWeight.w600,
-                                    color: AppColors.textSecondary,
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              weather.getLocalizedCondition(langCode),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.textSecondary,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
+                        const SizedBox(height: 20),
 
-                  // Stats Row: Humidity, Wind, Rain (Expanded to prevent overflow)
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.background,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _buildStatItem(
-                            Icons.water_drop_outlined,
-                            '${weather.humidity}%',
-                            LocalizationService.tr('humidity'),
+                        // Weather Stats Ribbon
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                           ),
-                        ),
-                        Container(height: 24, width: 1, color: AppColors.cardBorder),
-                        Expanded(
-                          child: _buildStatItem(
-                            Icons.air,
-                            '${weather.windSpeedKmH} km/h',
-                            LocalizationService.tr('wind'),
-                          ),
-                        ),
-                        Container(height: 24, width: 1, color: AppColors.cardBorder),
-                        Expanded(
-                          child: _buildStatItem(
-                            Icons.umbrella_outlined,
-                            '${weather.rainProbability}%',
-                            LocalizationService.tr('rain_chance'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Agricultural Advisory (Fully Localized)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: weather.isRainExpected ? AppColors.warningLight : AppColors.primaryLight,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: weather.isRainExpected
-                            ? AppColors.warning.withValues(alpha: 0.3)
-                            : AppColors.primary.withValues(alpha: 0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          weather.isRainExpected ? Icons.warning_amber_rounded : Icons.eco,
-                          size: 18,
-                          color: weather.isRainExpected ? AppColors.warning : AppColors.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
                             children: [
-                              Text(
-                                LocalizationService.tr('weather_advisory'),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: weather.isRainExpected ? AppColors.warning : AppColors.primaryDark,
-                                ),
+                              _buildWhiteStat(Icons.water_drop_outlined, '${weather.humidity}%', LocalizationService.tr('humidity')),
+                              Container(height: 24, width: 1, color: Colors.white.withValues(alpha: 0.3)),
+                              _buildWhiteStat(Icons.air_rounded, '${weather.windSpeedKmH} km/h', LocalizationService.tr('wind')),
+                              Container(height: 24, width: 1, color: Colors.white.withValues(alpha: 0.3)),
+                              _buildWhiteStat(Icons.umbrella_outlined, '${weather.rainProbability}%', LocalizationService.tr('rain_chance')),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Agricultural Advisory Callout
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                weather.getLocalizedAdvisory(langCode),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: weather.isRainExpected ? AppColors.warning : AppColors.textPrimary,
-                                  height: 1.35,
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isRain ? Icons.warning_amber_rounded : Icons.eco_rounded,
+                                color: isRain ? AppColors.warning : AppColors.primary,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      LocalizationService.tr('weather_advisory'),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: isRain ? AppColors.warning : AppColors.primaryDark,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      weather.getLocalizedAdvisory(langCode),
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textPrimary,
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -302,37 +325,25 @@ class _WeatherWidgetState extends State<WeatherWidget> {
     );
   }
 
-  Widget _buildStatItem(IconData icon, String value, String label) {
+  Widget _buildWhiteStat(IconData icon, String value, String label) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: AppColors.textSecondary),
-            const SizedBox(width: 3),
-            Flexible(
-              child: Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
+            Icon(icon, size: 15, color: Colors.white),
+            const SizedBox(width: 4),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
             ),
           ],
         ),
         const SizedBox(height: 2),
         Text(
           label,
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 10.5, color: AppColors.textSecondary),
+          style: const TextStyle(fontSize: 10.5, color: Colors.white70),
         ),
       ],
     );
