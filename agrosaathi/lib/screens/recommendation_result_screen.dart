@@ -10,7 +10,20 @@ import 'crop_setup_screen.dart';
 
 /// Detailed Crop Recommendation Results Screen.
 /// Owned by Person A. Multi-language and overflow safe.
-class RecommendationResultScreen extends StatelessWidget {
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../constants/app_colors.dart';
+import '../models/recommendation_model.dart';
+import '../services/community_preset_service.dart';
+import '../services/localization_service.dart';
+import '../widgets/app_button.dart';
+import '../widgets/app_card.dart';
+import '../widgets/status_chip.dart';
+import 'crop_setup_screen.dart';
+
+/// Detailed Crop Recommendation Results Screen.
+/// Owned by Person A. Multi-language and overflow safe.
+class RecommendationResultScreen extends StatefulWidget {
   final RecommendationInput input;
   final List<CropRecommendationOutput> results;
   final bool isFromHistory;
@@ -21,6 +34,36 @@ class RecommendationResultScreen extends StatelessWidget {
     required this.results,
     this.isFromHistory = false,
   });
+
+  @override
+  State<RecommendationResultScreen> createState() => _RecommendationResultScreenState();
+}
+
+class _RecommendationResultScreenState extends State<RecommendationResultScreen> {
+  bool _hasVoted = false;
+  bool _isVoting = false;
+  String? _voteStatusText;
+
+  Future<void> _submitFeedback(bool isUseful) async {
+    if (_isVoting || _hasVoted) return;
+
+    setState(() => _isVoting = true);
+
+    final success = await CommunityPresetService.recordRecommendationVote(
+      input: widget.input,
+      isUseful: isUseful,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isVoting = false;
+      _hasVoted = true;
+      _voteStatusText = success
+          ? (isUseful ? 'Thank you! Vote recorded as Useful 👍' : 'Thank you! Feedback recorded 👎')
+          : 'Could not record vote. Please check connection.';
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +80,7 @@ class RecommendationResultScreen extends StatelessWidget {
           appBar: AppBar(
             title: Text(LocalizationService.tr('results_title')),
           ),
-          body: results.isEmpty
+          body: widget.results.isEmpty
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
@@ -91,12 +134,70 @@ class RecommendationResultScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  '${input.district} • ${input.season.toUpperCase()} • ${input.soilType.toUpperCase()} • ${input.farmSizeAcres} Acres',
+                                  '${widget.input.district} • ${widget.input.season.toUpperCase()} • ${widget.input.soilType.toUpperCase()} • ${widget.input.farmSizeAcres} Acres',
                                   style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                                 ),
                               ],
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // In-App Community Feedback Card
+                    AppCard(
+                      padding: const EdgeInsets.all(14),
+                      backgroundColor: const Color(0xFFFFF8E1),
+                      borderColor: AppColors.secondary.withValues(alpha: 0.4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.how_to_vote_outlined, size: 18, color: AppColors.secondary),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Was this recommendation useful for ${widget.input.district}?',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          if (_voteStatusText != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                _voteStatusText!,
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primary),
+                              ),
+                            )
+                          else
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _isVoting ? null : () => _submitFeedback(true),
+                                    icon: const Icon(Icons.thumb_up_alt_outlined, size: 16, color: AppColors.primary),
+                                    label: const Text('Yes, Useful 👍', style: TextStyle(fontSize: 12, color: AppColors.primary)),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _isVoting ? null : () => _submitFeedback(false),
+                                    icon: const Icon(Icons.thumb_down_alt_outlined, size: 16, color: AppColors.error),
+                                    label: const Text('Not Useful 👎', style: TextStyle(fontSize: 12, color: AppColors.error)),
+                                  ),
+                                ),
+                              ],
+                            ),
                         ],
                       ),
                     ),

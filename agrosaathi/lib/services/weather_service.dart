@@ -83,6 +83,62 @@ class WeatherService {
 
   static List<String> get supportedDistricts => _districtFallbackData.keys.toList();
 
+  /// Fetches live weather using Open-Meteo API by GPS coordinates
+  static Future<WeatherInfo> fetchWeatherByCoordinates({
+    required double latitude,
+    required double longitude,
+    String defaultLocation = 'Local Region',
+  }) async {
+    try {
+      final url = Uri.parse(
+        'https://api.open-meteo.com/v1/forecast?'
+        'latitude=$latitude&longitude=$longitude&'
+        'current=temperature_2m,relative_humidity_2m,rain,surface_pressure,wind_speed_10m&'
+        'daily=rain_sum,precipitation_probability_max&timezone=auto',
+      );
+      final response = await http.get(url).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final current = data['current'] ?? {};
+        final daily = data['daily'] ?? {};
+
+        final temp = (current['temperature_2m'] as num?)?.toDouble() ?? 28.0;
+        final humidity = (current['relative_humidity_2m'] as num?)?.toInt() ?? 55;
+        final wind = (current['wind_speed_10m'] as num?)?.toDouble() ?? 12.0;
+        final rainMm = (current['rain'] as num?)?.toDouble() ?? 0.0;
+
+        final rainProbList = daily['precipitation_probability_max'] as List?;
+        final rainProb = (rainProbList != null && rainProbList.isNotEmpty)
+            ? (rainProbList[0] as num).toInt()
+            : (rainMm > 0 ? 80 : 20);
+
+        final isRain = rainMm > 0.5 || rainProb > 50;
+        final condition = isRain ? 'Rainy' : (temp > 32 ? 'Sunny' : 'Partly Cloudy');
+
+        return WeatherInfo(
+          location: defaultLocation,
+          temperature: temp,
+          condition: condition,
+          conditionKey: isRain ? 'weather_rain' : 'weather_partly_cloudy',
+          conditionDescription: condition,
+          humidity: humidity,
+          windSpeedKmH: wind,
+          rainProbability: rainProb,
+          advisoryKey: isRain ? 'advisory_kolhapur' : 'advisory_favorable',
+          agriculturalAdvisory: isRain
+              ? 'Rain expected in field: Hold scheduled irrigation and delay foliar spraying.'
+              : 'Optimal weather: Suitable for fertilizer application and field operations.',
+          isRainExpected: isRain,
+          lastUpdated: DateTime.now(),
+        );
+      }
+    } catch (_) {}
+
+    return _districtFallbackData[defaultLocation] ??
+        _districtFallbackData['Pune, Maharashtra']!;
+  }
+
   static Future<WeatherInfo> fetchWeather({String location = 'Pune, Maharashtra'}) async {
     try {
       final queryCity = location.split(',').first.trim();

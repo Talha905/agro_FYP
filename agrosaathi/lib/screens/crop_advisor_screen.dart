@@ -4,6 +4,9 @@ import '../constants/app_colors.dart';
 import '../models/recommendation_model.dart';
 import '../services/crop_recommendation_service.dart';
 import '../services/localization_service.dart';
+import '../services/location_service.dart';
+import '../services/soil_grids_service.dart';
+import '../services/community_preset_service.dart';
 import '../services/user_service.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
@@ -28,7 +31,7 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
   String _selectedSoil = 'black';
   String _selectedSeason = 'kharif';
   String _selectedWater = 'medium';
-  String _selectedDistrict = 'Pune, Maharashtra';
+  String _selectedDistrict = 'Select District';
 
   final TextEditingController _farmSizeController = TextEditingController(text: '2.0');
   final TextEditingController _nitrogenController = TextEditingController();
@@ -38,11 +41,25 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
 
   bool _isLoading = false;
   bool _showAdvancedNpk = false;
+  bool _isFetchingLocation = false;
+  String? _locationError;
+  LocationData? _currentLocationData;
+  List<CommunityPreset> _communityPresets = [];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+
+    // Determine current season automatically by month
+    final month = DateTime.now().month;
+    if (month >= 6 && month <= 10) {
+      _selectedSeason = 'kharif';
+    } else if (month >= 11 || month <= 3) {
+      _selectedSeason = 'rabi';
+    } else {
+      _selectedSeason = 'zaid';
+    }
 
     // Auto-populate default farm specs if present in UserModel
     final farmDetails = UserService.currentUser?.farmDetails;
@@ -57,6 +74,53 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
         _farmSizeController.text = farmDetails['farmSizeAcres'].toString();
       }
     }
+
+    // Trigger live location fetch
+    _fetchLiveLocation();
+  }
+
+  Future<void> _fetchLiveLocation() async {
+    setState(() {
+      _isFetchingLocation = true;
+      _locationError = null;
+    });
+
+    final res = await LocationService.getCurrentLocation();
+
+    if (!mounted) return;
+
+    if (res.isSuccess && res.location != null) {
+      final loc = res.location!;
+      setState(() {
+        _currentLocationData = loc;
+        _selectedDistrict = loc.formattedLocation;
+        _isFetchingLocation = false;
+      });
+
+      // Query SoilGrids for real soil properties by GPS
+      final soilData = await SoilGridsService.fetchSoilProperties(loc.latitude, loc.longitude);
+      if (soilData != null && mounted) {
+        setState(() {
+          _selectedSoil = soilData.soilType;
+          if (_phController.text.isEmpty) {
+            _phController.text = soilData.ph.toStringAsFixed(1);
+          }
+        });
+      }
+
+      // Query Community Presets for this district (min 3 useful votes)
+      final presets = await CommunityPresetService.fetchTopCommunityPresets(loc.formattedLocation);
+      if (mounted) {
+        setState(() {
+          _communityPresets = presets;
+        });
+      }
+    } else {
+      setState(() {
+        _isFetchingLocation = false;
+        _locationError = res.errorMessage ?? 'Could not fetch location.';
+      });
+    }
   }
 
   @override
@@ -70,33 +134,22 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
     super.dispose();
   }
 
-  void _applyPreset({
-    required String soil,
-    required String season,
-    required String water,
-    required String district,
-    required String acres,
-    String? n,
-    String? p,
-    String? k,
-    String? ph,
-  }) {
+  void _applyCommunityPreset(CommunityPreset p) {
     setState(() {
-      _selectedSoil = soil;
-      _selectedSeason = season;
-      _selectedWater = water;
-      _selectedDistrict = district;
-      _farmSizeController.text = acres;
-      if (n != null) _nitrogenController.text = n;
-      if (p != null) _phosphorusController.text = p;
-      if (k != null) _potassiumController.text = k;
-      if (ph != null) _phController.text = ph;
+      _selectedSoil = p.soilType;
+      _selectedSeason = p.season;
+      _selectedWater = p.waterAvailability;
+      _farmSizeController.text = p.farmSizeAcres.toString();
+      if (p.nitrogen != null) _nitrogenController.text = p.nitrogen!.toStringAsFixed(0);
+      if (p.phosphorus != null) _phosphorusController.text = p.phosphorus!.toStringAsFixed(0);
+      if (p.potassium != null) _potassiumController.text = p.potassium!.toStringAsFixed(0);
+      if (p.ph != null) _phController.text = p.ph!.toStringAsFixed(1);
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Applied preset for $district ($season season)'),
-        duration: const Duration(seconds: 1),
+        content: Text('Applied community preset for ${p.district} (${p.usefulVotes} 👍 votes)'),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -202,84 +255,117 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Quick Demo Presets
-            AppCard(
-              padding: const EdgeInsets.all(14),
-              backgroundColor: const Color(0xFFF1F8E9),
-              borderColor: AppColors.primary.withValues(alpha: 0.3),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.flash_on, size: 18, color: AppColors.primary),
-                      const SizedBox(width: 6),
-                      Text(
-                        LocalizationService.tr('quick_presets'),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primaryDark,
-                        ),
+            // Live Location Status Banner & Explicit Error Handling
+            if (_isFetchingLocation)
+              AppCard(
+                padding: const EdgeInsets.all(12),
+                backgroundColor: AppColors.surface,
+                child: const Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                    ),
+                    SizedBox(width: 12),
+                    Text(
+                      'Fetching live location & soil data via Open-Meteo & SoilGrids...',
+                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              )
+            else if (_locationError != null)
+              AppCard(
+                padding: const EdgeInsets.all(12),
+                backgroundColor: const Color(0xFFFFEBEE),
+                borderColor: AppColors.error.withValues(alpha: 0.4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _locationError!,
+                        style: const TextStyle(fontSize: 12, color: AppColors.error, fontWeight: FontWeight.w600),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ActionChip(
-                        avatar: const Icon(Icons.eco, size: 14, color: AppColors.primary),
-                        label: Text(LocalizationService.tr('preset_nashik'), style: const TextStyle(fontSize: 12)),
-                        onPressed: () => _applyPreset(
-                          soil: 'black',
-                          season: 'rabi',
-                          water: 'medium',
-                          district: 'Nashik, Maharashtra',
-                          acres: '3.0',
-                          n: '85',
-                          p: '40',
-                          k: '45',
-                          ph: '7.1',
-                        ),
+                    ),
+                    TextButton.icon(
+                      onPressed: _fetchLiveLocation,
+                      icon: const Icon(Icons.refresh, size: 14, color: AppColors.primary),
+                      label: const Text('Retry GPS', style: TextStyle(fontSize: 12, color: AppColors.primary)),
+                    ),
+                  ],
+                ),
+              )
+            else if (_currentLocationData != null)
+              AppCard(
+                padding: const EdgeInsets.all(12),
+                backgroundColor: const Color(0xFFE8F5E9),
+                borderColor: AppColors.primary.withValues(alpha: 0.3),
+                child: Row(
+                  children: [
+                    const Icon(Icons.my_location, color: AppColors.primary, size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Live Location: ${_currentLocationData!.formattedLocation}',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
                       ),
-                      ActionChip(
-                        avatar: const Icon(Icons.water_drop, size: 14, color: AppColors.accent),
-                        label: Text(LocalizationService.tr('preset_vidarbha'), style: const TextStyle(fontSize: 12)),
-                        onPressed: () => _applyPreset(
-                          soil: 'black',
-                          season: 'kharif',
-                          water: 'medium',
-                          district: 'Nagpur, Maharashtra',
-                          acres: '5.0',
-                          n: '90',
-                          p: '45',
-                          k: '50',
-                          ph: '7.4',
-                        ),
-                      ),
-                      ActionChip(
-                        avatar: const Icon(Icons.wb_sunny, size: 14, color: AppColors.secondary),
-                        label: Text(LocalizationService.tr('preset_pune'), style: const TextStyle(fontSize: 12)),
-                        onPressed: () => _applyPreset(
-                          soil: 'alluvial',
-                          season: 'zaid',
-                          water: 'high',
-                          district: 'Pune, Maharashtra',
-                          acres: '1.5',
-                          n: '75',
-                          p: '35',
-                          k: '40',
-                          ph: '6.8',
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh, size: 16, color: AppColors.primary),
+                      onPressed: _fetchLiveLocation,
+                      tooltip: 'Refresh Location & Soil',
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
+
+            // Community Popular Presets (Only displayed if presets have >= 3 useful votes)
+            if (_communityPresets.isNotEmpty) ...[
+              AppCard(
+                padding: const EdgeInsets.all(14),
+                backgroundColor: const Color(0xFFF1F8E9),
+                borderColor: AppColors.primary.withValues(alpha: 0.3),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.people_alt_outlined, size: 18, color: AppColors.primary),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Popular Presets in ${_selectedDistrict}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primaryDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _communityPresets.map((preset) {
+                        return ActionChip(
+                          avatar: const Icon(Icons.thumb_up_alt_outlined, size: 14, color: AppColors.primary),
+                          label: Text(
+                            '${preset.soilType.toUpperCase()} • ${preset.season.toUpperCase()} (${preset.usefulVotes} 👍)',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                          onPressed: () => _applyCommunityPreset(preset),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // Soil Type Selector
             AppDropdown<String>(

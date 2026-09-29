@@ -1,9 +1,13 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
 
 import '../constants/app_colors.dart';
 import '../constants/firestore_constants.dart';
 import '../models/growth_plan_model.dart';
+import '../services/api_service.dart';
 import '../services/growth_plan_generator.dart';
 import '../services/growth_plan_service.dart';
 import '../services/notification_service.dart';
@@ -18,6 +22,129 @@ class GrowthPlanDetailScreen extends StatefulWidget {
 
 class _GrowthPlanDetailScreenState extends State<GrowthPlanDetailScreen> {
   final GrowthPlanService _service = GrowthPlanService();
+  bool _isAdaptingImage = false;
+
+  Future<void> _adaptPlanWithCropPhoto(GrowthPlan plan) async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (image == null) return;
+
+    setState(() => _isAdaptingImage = true);
+
+    try {
+      final uri = Uri.parse('${ApiService.baseUrl}/adapt-growth-plan');
+      final request = http.MultipartRequest('POST', uri);
+
+      final planMap = {
+        'cropName': plan.cropName,
+        'stages': plan.stages.map((s) => {
+          'name': s.name,
+          'durationDays': s.durationDays,
+          'irrigationFrequencyDays': s.irrigationFrequencyDays,
+          'pestRisks': s.pestRisks,
+        }).toList(),
+        'fertilizerPlan': plan.fertilizerTasks.map((f) => {
+          'stageName': f.stageName,
+          'fertilizerType': f.fertilizerType,
+          'dayOffsetInStage': f.dayOffsetInStage,
+        }).toList(),
+      };
+
+      request.fields['plan_json'] = jsonEncode(planMap);
+      request.files.add(await http.MultipartFile.fromPath('file', image.path));
+
+      final streamedRes = await request.send().timeout(const Duration(seconds: 40));
+      final res = await http.Response.fromStream(streamedRes);
+
+      if (!mounted) return;
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['success'] == true) {
+          final disease = data['diseaseDetected'] ?? 'Healthy';
+          final confidence = (data['confidence'] as num?)?.toDouble() ?? 0.0;
+          final visionObs = data['visionObservation'] ?? 'Visual stage observation completed.';
+          final diff = data['diff'] as List? ?? [];
+
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Row(
+                children: [
+                  Icon(Icons.camera_alt, color: AppColors.primary),
+                  SizedBox(width: 8),
+                  Expanded(child: Text('AI Crop Photo Plan Recalibration', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Diagnosed Disease: $disease (${confidence.toStringAsFixed(1)}% confidence)',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: AppColors.primaryDark)),
+                          const SizedBox(height: 4),
+                          Text('Vision Observation (qwen2.5vl): $visionObs',
+                              style: const TextStyle(fontSize: 11.5, color: AppColors.textPrimary)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Schedule Changes (Diff):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    ...diff.map((item) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.background,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.cardBorder),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('${item['stage'].toString().toUpperCase()} stage: ${item['oldValue']} ➔ ${item['newValue']}',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.primary)),
+                                if (item['reason'] != null)
+                                  Text('Reason: ${item['reason']}', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                              ],
+                            ),
+                          ),
+                        )),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Image plan adaptation error: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAdaptingImage = false);
+    }
+  }
 
   Future<void> _handleMenuAction(String action, GrowthPlan plan) async {
     final confirmed = await showDialog<bool>(
@@ -210,6 +337,13 @@ class _GrowthPlanDetailScreenState extends State<GrowthPlanDetailScreen> {
             appBar: AppBar(
               title: Text(plan.cropName),
               actions: [
+                IconButton(
+                  icon: _isAdaptingImage
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.add_a_photo, color: Colors.white),
+                  tooltip: 'Upload Crop Photo to Refine Plan',
+                  onPressed: _isAdaptingImage ? null : () => _adaptPlanWithCropPhoto(plan),
+                ),
                 IconButton(
                   icon: const Icon(Icons.edit_calendar, color: Colors.white),
                   tooltip: 'Reschedule Plan',
