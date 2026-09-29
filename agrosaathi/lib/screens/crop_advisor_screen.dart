@@ -279,15 +279,15 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
               AppCard(
                 padding: const EdgeInsets.all(12),
                 backgroundColor: const Color(0xFFFFEBEE),
-                borderColor: AppColors.error.withValues(alpha: 0.4),
+                borderColor: AppColors.danger.withValues(alpha: 0.4),
                 child: Row(
                   children: [
-                    const Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                    const Icon(Icons.error_outline, color: AppColors.danger, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         _locationError!,
-                        style: const TextStyle(fontSize: 12, color: AppColors.error, fontWeight: FontWeight.w600),
+                        style: const TextStyle(fontSize: 12, color: AppColors.danger, fontWeight: FontWeight.w600),
                       ),
                     ),
                     TextButton.icon(

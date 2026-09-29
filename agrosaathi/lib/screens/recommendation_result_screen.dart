@@ -192,8 +192,8 @@ class _RecommendationResultScreenState extends State<RecommendationResultScreen>
                                 Expanded(
                                   child: OutlinedButton.icon(
                                     onPressed: _isVoting ? null : () => _submitFeedback(false),
-                                    icon: const Icon(Icons.thumb_down_alt_outlined, size: 16, color: AppColors.error),
-                                    label: const Text('Not Useful 👎', style: TextStyle(fontSize: 12, color: AppColors.error)),
+                                    icon: const Icon(Icons.thumb_down_alt_outlined, size: 16, color: AppColors.danger),
+                                    label: const Text('Not Useful 👎', style: TextStyle(fontSize: 12, color: AppColors.danger)),
                                   ),
                                 ),
                               ],
@@ -204,7 +204,7 @@ class _RecommendationResultScreenState extends State<RecommendationResultScreen>
                     const SizedBox(height: 16),
 
                     // Ranked Crop Cards
-                    ...results.asMap().entries.map((entry) {
+                    ...widget.results.asMap().entries.map((entry) {
                       final rank = entry.key + 1;
                       final crop = entry.value;
 

@@ -37,17 +37,10 @@ class _GrowthPlanDetailScreenState extends State<GrowthPlanDetailScreen> {
 
       final planMap = {
         'cropName': plan.cropName,
-        'stages': plan.stages.map((s) => {
-          'name': s.name,
-          'durationDays': s.durationDays,
-          'irrigationFrequencyDays': s.irrigationFrequencyDays,
-          'pestRisks': s.pestRisks,
-        }).toList(),
-        'fertilizerPlan': plan.fertilizerTasks.map((f) => {
-          'stageName': f.stageName,
-          'fertilizerType': f.fertilizerType,
-          'dayOffsetInStage': f.dayOffsetInStage,
-        }).toList(),
+        'currentStage': plan.currentStage,
+        'irrigationSchedule': plan.irrigationSchedule,
+        'fertilizerSchedule': plan.fertilizerSchedule,
+        'pestControlReminders': plan.pestControlReminders,
       };
 
       request.fields['plan_json'] = jsonEncode(planMap);

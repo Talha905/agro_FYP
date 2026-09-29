@@ -80,10 +80,8 @@ class LocationService {
 
       // 3. Fetch GPS position with strict 10s timeout
       Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 10),
-        ),
+        desiredAccuracy: LocationAccuracy.medium,
+        timeLimit: const Duration(seconds: 10),
       );
 
       // 4. Reverse Geocode via Open-Meteo Geocoding API / Nominatim
