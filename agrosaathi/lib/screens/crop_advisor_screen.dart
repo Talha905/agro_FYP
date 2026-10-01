@@ -310,24 +310,25 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
                             icon: const Icon(Icons.location_off, size: 14, color: AppColors.danger),
                             label: const Text('Turn On Location Services', style: TextStyle(fontSize: 12, color: AppColors.danger)),
                           )
-                        else if (locState.errorType == LocationErrorType.permissionDenied)
+                        else if (locState.errorType == LocationErrorType.permissionDenied) ...[
                           TextButton.icon(
                             onPressed: () async {
-                              final granted = await LocationService.requestPermission();
-                              if (granted) {
+                              final permission = await LocationService.requestPermission();
+                              if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
                                 AppLocationProvider.switchToCurrentGPS();
+                              } else if (permission == LocationPermission.deniedForever) {
+                                LocationService.openAppSettings();
                               }
                             },
                             icon: const Icon(Icons.security, size: 14, color: AppColors.primary),
-                            label: const Text('Allow GPS Permission', style: TextStyle(fontSize: 12, color: AppColors.primary)),
-                          )
-                        else if (locState.errorType == LocationErrorType.permanentlyDenied)
+                            label: const Text('Grant Permission', style: TextStyle(fontSize: 12, color: AppColors.primary)),
+                          ),
                           TextButton.icon(
                             onPressed: () => LocationService.openAppSettings(),
-                            icon: const Icon(Icons.settings, size: 14, color: AppColors.primary),
-                            label: const Text('Open App Settings', style: TextStyle(fontSize: 12, color: AppColors.primary)),
-                          )
-                        else
+                            icon: const Icon(Icons.settings, size: 14, color: AppColors.textSecondary),
+                            label: const Text('App Settings', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                          ),
+                        ] else
                           TextButton.icon(
                             onPressed: () => AppLocationProvider.switchToCurrentGPS(),
                             icon: const Icon(Icons.refresh, size: 14, color: AppColors.primary),
