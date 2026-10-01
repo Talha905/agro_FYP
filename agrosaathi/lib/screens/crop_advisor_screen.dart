@@ -75,9 +75,6 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
       }
     }
 
-    // Seed default NPK for initial soil
-    _updateSoilBaselineNpk(_selectedSoil);
-
     // Listen to shared AppLocationProvider
     AppLocationProvider.stateNotifier.addListener(_onLocationStateChanged);
     _onLocationStateChanged();
@@ -92,31 +89,18 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
       if (locState.soil != null) {
         setState(() {
           _selectedSoil = locState.soil!.soilType;
-          _updateSoilBaselineNpk(_selectedSoil);
+          _phController.text = locState.soil!.ph.toStringAsFixed(1);
         });
       }
-      _fetchPresetsForDistrict(_selectedDistrict);
+      _fetchPresetsForUser();
     }
   }
 
-  void _updateSoilBaselineNpk(String soilType) {
-    final baselines = {
-      'black': {'n': '90', 'p': '45', 'k': '50', 'ph': '7.4'},
-      'alluvial': {'n': '75', 'p': '35', 'k': '40', 'ph': '6.8'},
-      'red': {'n': '60', 'p': '30', 'k': '35', 'ph': '5.8'},
-      'sandy': {'n': '50', 'p': '25', 'k': '30', 'ph': '6.5'},
-      'clay': {'n': '85', 'p': '40', 'k': '45', 'ph': '7.1'},
-      'loamy': {'n': '70', 'p': '35', 'k': '40', 'ph': '6.6'},
-    };
-    final base = baselines[soilType.toLowerCase()] ?? baselines['black']!;
-    if (_nitrogenController.text.isEmpty) _nitrogenController.text = base['n']!;
-    if (_phosphorusController.text.isEmpty) _phosphorusController.text = base['p']!;
-    if (_potassiumController.text.isEmpty) _potassiumController.text = base['k']!;
-    if (_phController.text.isEmpty) _phController.text = base['ph']!;
-  }
-
-  Future<void> _fetchPresetsForDistrict(String district) async {
-    final presets = await CommunityPresetService.fetchTopCommunityPresets(district);
+  Future<void> _fetchPresetsForUser() async {
+    final presets = await CommunityPresetService.fetchPresetsForUser(
+      district: _selectedDistrict,
+      soilType: _selectedSoil,
+    );
     if (mounted) {
       setState(() {
         _communityPresets = presets;
@@ -136,8 +120,11 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
     super.dispose();
   }
 
+  String? _selectedPresetId;
+
   void _applyCommunityPreset(CommunityPreset p) {
     setState(() {
+      _selectedPresetId = p.id;
       _selectedSoil = p.soilType;
       _selectedSeason = p.season;
       _selectedWater = p.waterAvailability;
@@ -150,107 +137,15 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Applied community preset for ${p.district} (${p.usefulVotes} 👍 votes)'),
+        content: Text('Applied preset: ${p.title} (${p.usefulVotes} 👍 / ${p.notUsefulVotes} 👎 votes)'),
         duration: const Duration(seconds: 2),
       ),
     );
   }
 
-  Future<void> _submitRecommendation() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _isLoading = true);
-
-    try {
-      final acres = double.tryParse(_farmSizeController.text.trim()) ?? 1.0;
-      final n = double.tryParse(_nitrogenController.text.trim());
-      final p = double.tryParse(_phosphorusController.text.trim());
-      final k = double.tryParse(_potassiumController.text.trim());
-      final ph = double.tryParse(_phController.text.trim());
-
-      final input = RecommendationInput(
-        soilType: _selectedSoil,
-        season: _selectedSeason,
-        waterAvailability: _selectedWater,
-        district: _selectedDistrict,
-        farmSizeAcres: acres,
-        nitrogen: n,
-        phosphorus: p,
-        potassium: k,
-        ph: ph,
-      );
-
-      final lang = LocalizationService.currentLocale.value;
-      final results = await CropRecommendationService.getRecommendations(input, langCode: lang);
-
-      // Save to Firestore in background
-      final farmerId = UserService.currentUser?.uid ?? 'guest_farmer';
-      CropRecommendationService.saveRecommendationRecord(
-        farmerId: farmerId,
-        input: input,
-        outputs: results,
-      );
-
-      if (!mounted) return;
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => RecommendationResultScreen(
-            input: input,
-            results: results,
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error generating recommendations: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<String>(
-      valueListenable: LocalizationService.currentLocale,
-      builder: (context, langCode, _) {
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(LocalizationService.tr('advisor_title')),
-            bottom: TabBar(
-              controller: _tabController,
-              labelColor: AppColors.primary,
-              unselectedLabelColor: AppColors.textSecondary,
-              indicatorColor: AppColors.primary,
-              tabs: [
-                Tab(
-                  icon: const Icon(Icons.psychology_outlined, size: 18),
-                  text: LocalizationService.tr('advisor_tab_form'),
-                ),
-                Tab(
-                  icon: const Icon(Icons.history_outlined, size: 18),
-                  text: LocalizationService.tr('advisor_tab_history'),
-                ),
-              ],
-            ),
-          ),
-          body: TabBarView(
-            controller: _tabController,
-            children: [
-              _buildFormTab(langCode),
-              _buildHistoryTab(),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildFormTab(String langCode) {
     final locState = AppLocationProvider.currentState;
+    final isPhFromSoilGrids = locState.soil != null && _phController.text == locState.soil!.ph.toStringAsFixed(1);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -365,102 +260,7 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
               ),
             const SizedBox(height: 14),
 
-            // Community Popular Presets (Only displayed if presets have >= 3 useful votes)
-            if (_communityPresets.isNotEmpty) ...[
-              AppCard(
-                padding: const EdgeInsets.all(14),
-                backgroundColor: const Color(0xFFF1F8E9),
-                borderColor: AppColors.primary.withValues(alpha: 0.3),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.people_alt_outlined, size: 18, color: AppColors.primary),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Popular Presets in ${_selectedDistrict}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primaryDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: _communityPresets.map((preset) {
-                        return ActionChip(
-                          avatar: const Icon(Icons.thumb_up_alt_outlined, size: 14, color: AppColors.primary),
-                          label: Text(
-                            '${preset.soilType.toUpperCase()} • ${preset.season.toUpperCase()} (${preset.usefulVotes} 👍)',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                          ),
-                          onPressed: () => _applyCommunityPreset(preset),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // Soil Type Selector
-            AppDropdown<String>(
-              label: LocalizationService.tr('soil_type'),
-              value: _selectedSoil,
-              isRequired: true,
-              items: [
-                AppDropdownItem(value: 'black', label: LocalizationService.tr('soil_black'), icon: Icons.grass),
-                AppDropdownItem(value: 'alluvial', label: LocalizationService.tr('soil_alluvial'), icon: Icons.landscape),
-                AppDropdownItem(value: 'red', label: LocalizationService.tr('soil_red'), icon: Icons.terrain),
-                AppDropdownItem(value: 'clay', label: LocalizationService.tr('soil_clay'), icon: Icons.grain),
-                AppDropdownItem(value: 'loamy', label: LocalizationService.tr('soil_loamy'), icon: Icons.filter_vintage),
-                AppDropdownItem(value: 'sandy', label: LocalizationService.tr('soil_sandy'), icon: Icons.blur_on),
-              ],
-              onChanged: (val) {
-                if (val != null) setState(() => _selectedSoil = val);
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Season Selector
-            AppDropdown<String>(
-              label: LocalizationService.tr('season'),
-              value: _selectedSeason,
-              isRequired: true,
-              items: [
-                AppDropdownItem(value: 'kharif', label: LocalizationService.tr('season_kharif'), icon: Icons.umbrella),
-                AppDropdownItem(value: 'rabi', label: LocalizationService.tr('season_rabi'), icon: Icons.ac_unit),
-                AppDropdownItem(value: 'zaid', label: LocalizationService.tr('season_zaid'), icon: Icons.wb_sunny),
-              ],
-              onChanged: (val) {
-                if (val != null) setState(() => _selectedSeason = val);
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Water Availability
-            AppDropdown<String>(
-              label: LocalizationService.tr('water_availability'),
-              value: _selectedWater,
-              isRequired: true,
-              items: [
-                AppDropdownItem(value: 'low', label: LocalizationService.tr('water_low'), icon: Icons.opacity),
-                AppDropdownItem(value: 'medium', label: LocalizationService.tr('water_medium'), icon: Icons.water_drop),
-                AppDropdownItem(value: 'high', label: LocalizationService.tr('water_high'), icon: Icons.waves),
-              ],
-              onChanged: (val) {
-                if (val != null) setState(() => _selectedWater = val);
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // District & Farm Size in 2 columns (Expanded to avoid overflow)
+            // District & Farm Size in 2 columns (Clean District names without long division truncation)
             Builder(
               builder: (context) {
                 const stdDistricts = [
@@ -471,17 +271,16 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
                   'Aurangabad, Maharashtra',
                   'Solapur, Maharashtra',
                   'Amravati, Maharashtra',
+                  'Mumbai City, Maharashtra',
                 ];
+                final cleanSelectedDist = LocationService.extractBroadDistrict(_selectedDistrict);
+
                 final districtItems = <AppDropdownItem<String>>[
-                  if (!stdDistricts.contains(_selectedDistrict))
-                    AppDropdownItem(value: _selectedDistrict, label: _selectedDistrict),
-                  const AppDropdownItem(value: 'Pune, Maharashtra', label: 'Pune'),
-                  const AppDropdownItem(value: 'Nashik, Maharashtra', label: 'Nashik'),
-                  const AppDropdownItem(value: 'Nagpur, Maharashtra', label: 'Nagpur'),
-                  const AppDropdownItem(value: 'Kolhapur, Maharashtra', label: 'Kolhapur'),
-                  const AppDropdownItem(value: 'Aurangabad, Maharashtra', label: 'Aurangabad'),
-                  const AppDropdownItem(value: 'Solapur, Maharashtra', label: 'Solapur'),
-                  const AppDropdownItem(value: 'Amravati, Maharashtra', label: 'Amravati'),
+                  if (!stdDistricts.contains(cleanSelectedDist))
+                    AppDropdownItem(value: _selectedDistrict, label: cleanSelectedDist),
+                  ...stdDistricts.map(
+                    (d) => AppDropdownItem(value: d, label: d.split(',').first.trim()),
+                  ),
                 ];
 
                 return Row(
@@ -490,10 +289,13 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
                       flex: 3,
                       child: AppDropdown<String>(
                         label: LocalizationService.tr('district'),
-                        value: _selectedDistrict,
+                        value: stdDistricts.contains(_selectedDistrict) ? _selectedDistrict : districtItems.first.value,
                         items: districtItems,
                         onChanged: (val) {
-                          if (val != null) setState(() => _selectedDistrict = val);
+                          if (val != null) {
+                            setState(() => _selectedDistrict = val);
+                            _fetchPresetsForUser();
+                          }
                         },
                       ),
                     ),
@@ -516,6 +318,167 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
                   ],
                 );
               },
+            ),
+            const SizedBox(height: 16),
+
+            // Top 3 Recommended Presets Section (Ranked with real votes & detailed specs comparison)
+            AppCard(
+              padding: const EdgeInsets.all(14),
+              backgroundColor: const Color(0xFFF1F8E9),
+              borderColor: AppColors.primary.withValues(alpha: 0.3),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.stars_outlined, size: 18, color: AppColors.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Top Recommendations for ${LocationService.extractBroadDistrict(_selectedDistrict).split(',').first}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primaryDark,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryLight,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${_communityPresets.length} Options',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primary),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (_communityPresets.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text(
+                        'Loading presets for this location...',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                    )
+                  else
+                    Column(
+                      children: _communityPresets.map((p) {
+                        final isSelected = _selectedPresetId == p.id;
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: InkWell(
+                            onTap: () => _applyCommunityPreset(p),
+                            borderRadius: BorderRadius.circular(12),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: isSelected ? const Color(0xFFDCEDC8) : Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isSelected ? AppColors.primary : AppColors.cardBorder,
+                                  width: isSelected ? 2 : 1,
+                                ),
+                                boxShadow: isSelected ? AppColors.softShadow : null,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            p.isSeed ? Icons.eco_outlined : Icons.thumb_up_alt_outlined,
+                                            size: 16,
+                                            color: isSelected ? AppColors.primaryDark : AppColors.primary,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            p.title,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: isSelected ? AppColors.primaryDark : AppColors.textPrimary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      // Votes badge (Database values only)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: p.isSeed ? AppColors.background : AppColors.primaryLight,
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            const Text('👍 ', style: TextStyle(fontSize: 11)),
+                                            Text(
+                                              '${p.usefulVotes}',
+                                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            const Text('👎 ', style: TextStyle(fontSize: 11)),
+                                            Text(
+                                              '${p.notUsefulVotes}',
+                                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.danger),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    p.isSeed
+                                        ? 'Typical for ${p.soilType.toUpperCase()} soil'
+                                        : 'Community preset in ${p.district}',
+                                    style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  // NPK & pH Specs Row for comparison
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? Colors.white.withValues(alpha: 0.7) : AppColors.background,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text('N: ${p.nitrogen?.toInt() ?? "-"} kg/ha', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                                        Text('P: ${p.phosphorus?.toInt() ?? "-"} kg/ha', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                                        Text('K: ${p.potassium?.toInt() ?? "-"} kg/ha', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                                        Text('pH: ${p.ph?.toStringAsFixed(1) ?? "-"}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                                        Text(p.waterAvailability.toUpperCase(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primary)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -588,11 +551,30 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
                       ],
                     ),
                     const SizedBox(height: 10),
-                    AppTextField(
-                      label: LocalizationService.tr('soil_ph'),
-                      hint: '6.5 - 7.5',
-                      controller: _phController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppTextField(
+                          label: isPhFromSoilGrids ? 'Soil pH (Fetched via SoilGrids)' : LocalizationService.tr('soil_ph'),
+                          hint: '6.5 - 7.5',
+                          controller: _phController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        ),
+                        if (isPhFromSoilGrids)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 4, left: 4),
+                            child: Row(
+                              children: [
+                                Icon(Icons.check_circle_outline, size: 12, color: AppColors.primary),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Live pH fetched from SoilGrids REST API',
+                                  style: TextStyle(fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.w500),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),

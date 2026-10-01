@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/crop_model.dart';
 import '../models/recommendation_model.dart';
@@ -380,15 +381,19 @@ class CropRecommendationService {
   static Stream<List<RecommendationRecord>> streamHistory(String farmerId) {
     return FirestoreRefs.recommendations
         .where('farmerId', isEqualTo: farmerId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
+      final records = snapshot.docs.map((doc) {
         return RecommendationRecord.fromMap(
           doc.id,
           Map<String, dynamic>.from(doc.data() as Map),
         );
       }).toList();
+
+      // Client-side sort by createdAt descending to eliminate composite index requirement
+      records.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      debugPrint('[HistoryStream] uid=$farmerId, path=recommendations, count=${records.length}');
+      return records;
     });
   }
 }

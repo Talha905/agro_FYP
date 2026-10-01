@@ -1,0 +1,33 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "recommendations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "farmerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "community_crop_presets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "district",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "usefulVotes",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

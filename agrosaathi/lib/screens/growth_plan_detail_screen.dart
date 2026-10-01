@@ -25,8 +25,37 @@ class _GrowthPlanDetailScreenState extends State<GrowthPlanDetailScreen> {
   bool _isAdaptingImage = false;
 
   Future<void> _adaptPlanWithCropPhoto(GrowthPlan plan) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Select Photo Source', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: AppColors.primary),
+                title: const Text('Take Photo with Camera'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: AppColors.primary),
+                title: const Text('Choose from Gallery'),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
     final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    final image = await picker.pickImage(source: source, imageQuality: 80);
     if (image == null) return;
 
     setState(() => _isAdaptingImage = true);
@@ -58,6 +87,50 @@ class _GrowthPlanDetailScreenState extends State<GrowthPlanDetailScreen> {
           final confidence = (data['confidence'] as num?)?.toDouble() ?? 0.0;
           final visionObs = data['visionObservation'] ?? 'Visual stage observation completed.';
           final diff = data['diff'] as List? ?? [];
+          final needsRetake = confidence < 60.0 || data['needsRetake'] == true;
+
+          if (needsRetake) {
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                title: const Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: AppColors.warning),
+                    SizedBox(width: 8),
+                    Expanded(child: Text('Unclear Photo - Retake Suggested', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Confidence score was only ${confidence.toStringAsFixed(1)}% (Threshold: 60%).',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary)),
+                    const SizedBox(height: 8),
+                    const Text('The photo may be blurry, poorly lit, or taken from too far away. Please take a clear, close-up photo of the affected crop leaf/stem under good lighting and try again.',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+                    icon: const Icon(Icons.camera_alt, size: 16),
+                    label: const Text('Retake Photo'),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _adaptPlanWithCropPhoto(plan);
+                    },
+                  ),
+                ],
+              ),
+            );
+            return;
+          }
 
           showDialog(
             context: context,
@@ -84,7 +157,7 @@ class _GrowthPlanDetailScreenState extends State<GrowthPlanDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Diagnosed Disease: $disease (${confidence.toStringAsFixed(1)}% confidence)',
+                          Text('Diagnosed Health/Disease: $disease (${confidence.toStringAsFixed(1)}% confidence)',
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: AppColors.primaryDark)),
                           const SizedBox(height: 4),
                           Text('Vision Observation (qwen2.5vl): $visionObs',
@@ -93,7 +166,7 @@ class _GrowthPlanDetailScreenState extends State<GrowthPlanDetailScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    const Text('Schedule Changes (Diff):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const Text('Schedule Recalibration Diff:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                     const SizedBox(height: 6),
                     ...diff.map((item) => Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
@@ -364,7 +437,13 @@ class _GrowthPlanDetailScreenState extends State<GrowthPlanDetailScreen> {
             ),
             body: Column(
               children: [
-                _HarvestCountdown(plan: plan, overdueDays: overdueDays, onRescheduleTap: () => _showRescheduleDialog(plan, suggestedDelayDays: overdueDays > 0 ? overdueDays : 3)),
+                _HarvestCountdown(
+                  plan: plan,
+                  overdueDays: overdueDays,
+                  isAdaptingImage: _isAdaptingImage,
+                  onRescheduleTap: () => _showRescheduleDialog(plan, suggestedDelayDays: overdueDays > 0 ? overdueDays : 3),
+                  onUploadPhotoTap: () => _adaptPlanWithCropPhoto(plan),
+                ),
                 Expanded(
                   child: TabBarView(
                     children: [
@@ -387,9 +466,17 @@ class _GrowthPlanDetailScreenState extends State<GrowthPlanDetailScreen> {
 class _HarvestCountdown extends StatelessWidget {
   final GrowthPlan plan;
   final int overdueDays;
+  final bool isAdaptingImage;
   final VoidCallback onRescheduleTap;
+  final VoidCallback onUploadPhotoTap;
 
-  const _HarvestCountdown({required this.plan, required this.overdueDays, required this.onRescheduleTap});
+  const _HarvestCountdown({
+    required this.plan,
+    required this.overdueDays,
+    required this.isAdaptingImage,
+    required this.onRescheduleTap,
+    required this.onUploadPhotoTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -446,6 +533,30 @@ class _HarvestCountdown extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Prominent Full-Width "Upload Crop Photo to Refine Plan" Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 2,
+              ),
+              icon: isAdaptingImage
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.add_a_photo, size: 20),
+              label: Text(
+                isAdaptingImage ? 'Analyzing Crop Photo with AI...' : '📷 Upload Crop Photo to Refine Plan',
+                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+              ),
+              onPressed: isAdaptingImage ? null : onUploadPhotoTap,
+            ),
           ),
 
           // Overdue Task Banner with Instant Reschedule Option

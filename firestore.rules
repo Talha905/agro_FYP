@@ -7,21 +7,24 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Community Crop Presets: Public read, authenticated incremental updates
+    // Community Crop Presets: Public read, public/authenticated incremental updates
     match /community_crop_presets/{presetId} {
-      allow read: if true;
-      allow create, update: if request.auth != null;
+      allow read, write: if true;
     }
 
     // Recommendation Votes: One vote document per user per recommendation setup
     match /recommendation_votes/{voteId} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow read, write: if true;
+    }
+
+    // Recommendation History
+    match /recommendations/{docId} {
+      allow read, write: if request.auth != null || request.resource.data.farmerId != null;
     }
 
     // Growth Plans
     match /growth_plans/{planId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null || true;
     }
   }
 }

@@ -26,10 +26,11 @@ class _GrowthPlanListScreenState extends State<GrowthPlanListScreen> {
       appBar: AppBar(
         title: const Text(
           'Growth Planner',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
         ),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppColors.surface,
+        elevation: 1,
+        surfaceTintColor: Colors.transparent,
       ),
       body: StreamBuilder<List<GrowthPlan>>(
         stream: _planService.streamUserPlans(farmerId),
@@ -79,11 +80,31 @@ class _GrowthPlanListScreenState extends State<GrowthPlanListScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Tap the green + button below to create your personalized crop growth schedule with AI assistance.',
+                      'Create your personalized crop growth schedule with AI assistance.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
                         color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const CropSetupScreen()),
+                        );
+                      },
+                      icon: const Icon(Icons.add, size: 20),
+                      label: const Text(
+                        'Start New Plan',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
@@ -93,7 +114,7 @@ class _GrowthPlanListScreenState extends State<GrowthPlanListScreen> {
           }
 
           return ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
             children: [
               // Header Summary Banner
               Container(
@@ -255,23 +276,26 @@ class _GrowthPlanListScreenState extends State<GrowthPlanListScreen> {
         },
       ),
 
-      // Prominent FloatingActionButton (+) to Start a New Growth Plan
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const CropSetupScreen()),
-          );
-        },
-        backgroundColor: AppColors.primary,
-        elevation: 6,
-        icon: const Icon(Icons.add, color: Colors.white, size: 24),
-        label: const Text(
-          'Start New Plan',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
+      // FloatingActionButton (+) positioned above bottom navigation bar (~70-80px padding)
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 70),
+        child: FloatingActionButton.extended(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CropSetupScreen()),
+            );
+          },
+          backgroundColor: AppColors.primary,
+          elevation: 6,
+          icon: const Icon(Icons.add, color: Colors.white, size: 24),
+          label: const Text(
+            'Start New Plan',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
           ),
         ),
       ),
