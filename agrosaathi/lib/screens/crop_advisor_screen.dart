@@ -143,6 +143,99 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
     );
   }
 
+  Future<void> _submitRecommendation() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final acres = double.tryParse(_farmSizeController.text.trim()) ?? 1.0;
+      final n = double.tryParse(_nitrogenController.text.trim());
+      final p = double.tryParse(_phosphorusController.text.trim());
+      final k = double.tryParse(_potassiumController.text.trim());
+      final ph = double.tryParse(_phController.text.trim());
+
+      final input = RecommendationInput(
+        soilType: _selectedSoil,
+        season: _selectedSeason,
+        waterAvailability: _selectedWater,
+        district: _selectedDistrict,
+        farmSizeAcres: acres,
+        nitrogen: n,
+        phosphorus: p,
+        potassium: k,
+        ph: ph,
+      );
+
+      final lang = LocalizationService.currentLocale.value;
+      final results = await CropRecommendationService.getRecommendations(input, langCode: lang);
+
+      // Save to Firestore in background
+      final farmerId = UserService.currentUser?.uid ?? 'guest_farmer';
+      CropRecommendationService.saveRecommendationRecord(
+        farmerId: farmerId,
+        input: input,
+        outputs: results,
+      );
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RecommendationResultScreen(
+            input: input,
+            results: results,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error generating recommendations: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<String>(
+      valueListenable: LocalizationService.currentLocale,
+      builder: (context, langCode, _) {
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(LocalizationService.tr('advisor_title')),
+            bottom: TabBar(
+              controller: _tabController,
+              labelColor: AppColors.primary,
+              unselectedLabelColor: AppColors.textSecondary,
+              indicatorColor: AppColors.primary,
+              tabs: [
+                Tab(
+                  icon: const Icon(Icons.psychology_outlined, size: 18),
+                  text: LocalizationService.tr('advisor_tab_form'),
+                ),
+                Tab(
+                  icon: const Icon(Icons.history_outlined, size: 18),
+                  text: LocalizationService.tr('advisor_tab_history'),
+                ),
+              ],
+            ),
+          ),
+          body: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildFormTab(langCode),
+              _buildHistoryTab(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildFormTab(String langCode) {
     final locState = AppLocationProvider.currentState;
     final isPhFromSoilGrids = locState.soil != null && _phController.text == locState.soil!.ph.toStringAsFixed(1);
