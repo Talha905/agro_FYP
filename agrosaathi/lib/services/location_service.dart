@@ -45,10 +45,25 @@ class LocationResult {
 }
 
 class LocationService {
+  /// Opens device GPS location settings screen
+  static Future<bool> openLocationSettings() async {
+    return await Geolocator.openLocationSettings();
+  }
+
+  /// Opens app settings screen for permissions
+  static Future<bool> openAppSettings() async {
+    return await Geolocator.openAppSettings();
+  }
+
+  /// Requests location permission again
+  static Future<LocationPermission> requestPermission() async {
+    return await Geolocator.requestPermission();
+  }
+
   /// Fetches real device GPS coordinates and performs reverse geocoding.
   /// Returns explicit error states if GPS is disabled, permission denied, or timeout occurs.
   /// NEVER silently falls back to hardcoded locations.
-  static Future<LocationResult> getCurrentLocation() async {
+  static Future<LocationResult> getCurrentLocation({int timeoutSeconds = 10}) async {
     try {
       // 1. Check if location services are enabled on device
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -78,11 +93,24 @@ class LocationService {
         );
       }
 
-      // 3. Fetch GPS position with strict 10s timeout
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-        timeLimit: const Duration(seconds: 10),
-      );
+      // 3. Fetch GPS position with configurable timeout
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: timeoutSeconds),
+        );
+      } catch (_) {
+        // Fallback to last known GPS position on timeout
+        position = await Geolocator.getLastKnownPosition();
+      }
+
+      if (position == null) {
+        return LocationResult.error(
+          LocationErrorType.timeout,
+          'Location fetch timed out. Please check your GPS signal and tap Retry.',
+        );
+      }
 
       // 4. Reverse Geocode via Open-Meteo Geocoding API / Nominatim
       final locData = await _reverseGeocode(position.latitude, position.longitude);
@@ -95,18 +123,12 @@ class LocationService {
         LocationData(
           latitude: position.latitude,
           longitude: position.longitude,
-          city: 'Local Area',
+          city: 'Local Region',
           state: 'State',
           district: '${position.latitude.toStringAsFixed(2)}°N, ${position.longitude.toStringAsFixed(2)}°E',
         ),
       );
     } catch (e) {
-      if (e.toString().contains('TimeoutException') || e.toString().contains('timeLimit')) {
-        return LocationResult.error(
-          LocationErrorType.timeout,
-          'Location fetch timed out. Please check your GPS signal and retry.',
-        );
-      }
       return LocationResult.error(
         LocationErrorType.unknown,
         'Could not fetch location: $e',

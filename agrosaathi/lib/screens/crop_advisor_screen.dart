@@ -14,6 +14,8 @@ import '../widgets/app_dropdown.dart';
 import '../widgets/app_text_field.dart';
 import 'recommendation_result_screen.dart';
 
+import '../services/app_location_provider.dart';
+
 /// Complete Crop Advisor Module Screen.
 /// Owned by Person A. Multi-language enabled and responsive.
 class CropAdvisorScreen extends StatefulWidget {
@@ -31,7 +33,7 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
   String _selectedSoil = 'black';
   String _selectedSeason = 'kharif';
   String _selectedWater = 'medium';
-  String _selectedDistrict = 'Select District';
+  String _selectedDistrict = 'Pune, Maharashtra';
 
   final TextEditingController _farmSizeController = TextEditingController(text: '2.0');
   final TextEditingController _nitrogenController = TextEditingController();
@@ -41,9 +43,6 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
 
   bool _isLoading = false;
   bool _showAdvancedNpk = false;
-  bool _isFetchingLocation = false;
-  String? _locationError;
-  LocationData? _currentLocationData;
   List<CommunityPreset> _communityPresets = [];
 
   @override
@@ -75,56 +74,58 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
       }
     }
 
-    // Trigger live location fetch
-    _fetchLiveLocation();
+    // Seed default NPK for initial soil
+    _updateSoilBaselineNpk(_selectedSoil);
+
+    // Listen to shared AppLocationProvider
+    AppLocationProvider.stateNotifier.addListener(_onLocationStateChanged);
+    _onLocationStateChanged();
   }
 
-  Future<void> _fetchLiveLocation() async {
-    setState(() {
-      _isFetchingLocation = true;
-      _locationError = null;
-    });
-
-    final res = await LocationService.getCurrentLocation();
-
-    if (!mounted) return;
-
-    if (res.isSuccess && res.location != null) {
-      final loc = res.location!;
+  void _onLocationStateChanged() {
+    final locState = AppLocationProvider.currentState;
+    if (locState.location != null && mounted) {
       setState(() {
-        _currentLocationData = loc;
-        _selectedDistrict = loc.formattedLocation;
-        _isFetchingLocation = false;
+        _selectedDistrict = locState.location!.formattedLocation;
       });
-
-      // Query SoilGrids for real soil properties by GPS
-      final soilData = await SoilGridsService.fetchSoilProperties(loc.latitude, loc.longitude);
-      if (soilData != null && mounted) {
+      if (locState.soil != null) {
         setState(() {
-          _selectedSoil = soilData.soilType;
-          if (_phController.text.isEmpty) {
-            _phController.text = soilData.ph.toStringAsFixed(1);
-          }
+          _selectedSoil = locState.soil!.soilType;
+          _updateSoilBaselineNpk(_selectedSoil);
         });
       }
+      _fetchPresetsForDistrict(_selectedDistrict);
+    }
+  }
 
-      // Query Community Presets for this district (min 3 useful votes)
-      final presets = await CommunityPresetService.fetchTopCommunityPresets(loc.formattedLocation);
-      if (mounted) {
-        setState(() {
-          _communityPresets = presets;
-        });
-      }
-    } else {
+  void _updateSoilBaselineNpk(String soilType) {
+    final baselines = {
+      'black': {'n': '90', 'p': '45', 'k': '50', 'ph': '7.4'},
+      'alluvial': {'n': '75', 'p': '35', 'k': '40', 'ph': '6.8'},
+      'red': {'n': '60', 'p': '30', 'k': '35', 'ph': '5.8'},
+      'sandy': {'n': '50', 'p': '25', 'k': '30', 'ph': '6.5'},
+      'clay': {'n': '85', 'p': '40', 'k': '45', 'ph': '7.1'},
+      'loamy': {'n': '70', 'p': '35', 'k': '40', 'ph': '6.6'},
+    };
+    final base = baselines[soilType.toLowerCase()] ?? baselines['black']!;
+    if (_nitrogenController.text.isEmpty) _nitrogenController.text = base['n']!;
+    if (_phosphorusController.text.isEmpty) _phosphorusController.text = base['p']!;
+    if (_potassiumController.text.isEmpty) _potassiumController.text = base['k']!;
+    if (_phController.text.isEmpty) _phController.text = base['ph']!;
+  }
+
+  Future<void> _fetchPresetsForDistrict(String district) async {
+    final presets = await CommunityPresetService.fetchTopCommunityPresets(district);
+    if (mounted) {
       setState(() {
-        _isFetchingLocation = false;
-        _locationError = res.errorMessage ?? 'Could not fetch location.';
+        _communityPresets = presets;
       });
     }
   }
 
   @override
   void dispose() {
+    AppLocationProvider.stateNotifier.removeListener(_onLocationStateChanged);
     _tabController.dispose();
     _farmSizeController.dispose();
     _nitrogenController.dispose();
@@ -248,6 +249,8 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
   }
 
   Widget _buildFormTab(String langCode) {
+    final locState = AppLocationProvider.currentState;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Form(
@@ -256,7 +259,7 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Live Location Status Banner & Explicit Error Handling
-            if (_isFetchingLocation)
+            if (locState.status == LocationStatus.detecting)
               AppCard(
                 padding: const EdgeInsets.all(12),
                 backgroundColor: AppColors.surface,
@@ -268,37 +271,74 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
                       child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
                     ),
                     SizedBox(width: 12),
-                    Text(
-                      'Fetching live location & soil data via Open-Meteo & SoilGrids...',
-                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                    Expanded(
+                      child: Text(
+                        'Fetching live location & soil data via Open-Meteo & SoilGrids...',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                      ),
                     ),
                   ],
                 ),
               )
-            else if (_locationError != null)
+            else if (locState.status == LocationStatus.error || locState.errorMessage != null)
               AppCard(
                 padding: const EdgeInsets.all(12),
                 backgroundColor: const Color(0xFFFFEBEE),
                 borderColor: AppColors.danger.withValues(alpha: 0.4),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.error_outline, color: AppColors.danger, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _locationError!,
-                        style: const TextStyle(fontSize: 12, color: AppColors.danger, fontWeight: FontWeight.w600),
-                      ),
+                    Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: AppColors.danger, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            locState.errorMessage ?? 'GPS Location unavailable.',
+                            style: const TextStyle(fontSize: 12, color: AppColors.danger, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
                     ),
-                    TextButton.icon(
-                      onPressed: _fetchLiveLocation,
-                      icon: const Icon(Icons.refresh, size: 14, color: AppColors.primary),
-                      label: const Text('Retry GPS', style: TextStyle(fontSize: 12, color: AppColors.primary)),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (locState.errorType == LocationErrorType.serviceDisabled)
+                          TextButton.icon(
+                            onPressed: () => LocationService.openLocationSettings(),
+                            icon: const Icon(Icons.location_off, size: 14, color: AppColors.danger),
+                            label: const Text('Turn On Location Services', style: TextStyle(fontSize: 12, color: AppColors.danger)),
+                          )
+                        else if (locState.errorType == LocationErrorType.permissionDenied)
+                          TextButton.icon(
+                            onPressed: () async {
+                              final granted = await LocationService.requestPermission();
+                              if (granted) {
+                                AppLocationProvider.switchToCurrentGPS();
+                              }
+                            },
+                            icon: const Icon(Icons.security, size: 14, color: AppColors.primary),
+                            label: const Text('Allow GPS Permission', style: TextStyle(fontSize: 12, color: AppColors.primary)),
+                          )
+                        else if (locState.errorType == LocationErrorType.permanentlyDenied)
+                          TextButton.icon(
+                            onPressed: () => LocationService.openAppSettings(),
+                            icon: const Icon(Icons.settings, size: 14, color: AppColors.primary),
+                            label: const Text('Open App Settings', style: TextStyle(fontSize: 12, color: AppColors.primary)),
+                          )
+                        else
+                          TextButton.icon(
+                            onPressed: () => AppLocationProvider.switchToCurrentGPS(),
+                            icon: const Icon(Icons.refresh, size: 14, color: AppColors.primary),
+                            label: const Text('Retry GPS (15s)', style: TextStyle(fontSize: 12, color: AppColors.primary)),
+                          ),
+                      ],
                     ),
                   ],
                 ),
               )
-            else if (_currentLocationData != null)
+            else if (locState.location != null)
               AppCard(
                 padding: const EdgeInsets.all(12),
                 backgroundColor: const Color(0xFFE8F5E9),
@@ -309,13 +349,13 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Live Location: ${_currentLocationData!.formattedLocation}',
+                        'Live Location: ${locState.location!.formattedLocation}',
                         style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
                       ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.refresh, size: 16, color: AppColors.primary),
-                      onPressed: _fetchLiveLocation,
+                      onPressed: () => AppLocationProvider.switchToCurrentGPS(),
                       tooltip: 'Refresh Location & Soil',
                     ),
                   ],
@@ -419,44 +459,61 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
             const SizedBox(height: 16),
 
             // District & Farm Size in 2 columns (Expanded to avoid overflow)
-            Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: AppDropdown<String>(
-                    label: LocalizationService.tr('district'),
-                    value: _selectedDistrict,
-                    items: const [
-                      AppDropdownItem(value: 'Pune, Maharashtra', label: 'Pune'),
-                      AppDropdownItem(value: 'Nashik, Maharashtra', label: 'Nashik'),
-                      AppDropdownItem(value: 'Nagpur, Maharashtra', label: 'Nagpur'),
-                      AppDropdownItem(value: 'Kolhapur, Maharashtra', label: 'Kolhapur'),
-                      AppDropdownItem(value: 'Aurangabad, Maharashtra', label: 'Aurangabad'),
-                      AppDropdownItem(value: 'Solapur, Maharashtra', label: 'Solapur'),
-                      AppDropdownItem(value: 'Amravati, Maharashtra', label: 'Amravati'),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedDistrict = val);
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: AppTextField(
-                    label: LocalizationService.tr('farm_size'),
-                    hint: LocalizationService.tr('farm_size_hint'),
-                    controller: _farmSizeController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    isRequired: true,
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) return LocalizationService.tr('error_required');
-                      if (double.tryParse(val.trim()) == null) return LocalizationService.tr('error_invalid_number');
-                      return null;
-                    },
-                  ),
-                ),
-              ],
+            Builder(
+              builder: (context) {
+                const stdDistricts = [
+                  'Pune, Maharashtra',
+                  'Nashik, Maharashtra',
+                  'Nagpur, Maharashtra',
+                  'Kolhapur, Maharashtra',
+                  'Aurangabad, Maharashtra',
+                  'Solapur, Maharashtra',
+                  'Amravati, Maharashtra',
+                ];
+                final districtItems = <AppDropdownItem<String>>[
+                  if (!stdDistricts.contains(_selectedDistrict))
+                    AppDropdownItem(value: _selectedDistrict, label: _selectedDistrict),
+                  const AppDropdownItem(value: 'Pune, Maharashtra', label: 'Pune'),
+                  const AppDropdownItem(value: 'Nashik, Maharashtra', label: 'Nashik'),
+                  const AppDropdownItem(value: 'Nagpur, Maharashtra', label: 'Nagpur'),
+                  const AppDropdownItem(value: 'Kolhapur, Maharashtra', label: 'Kolhapur'),
+                  const AppDropdownItem(value: 'Aurangabad, Maharashtra', label: 'Aurangabad'),
+                  const AppDropdownItem(value: 'Solapur, Maharashtra', label: 'Solapur'),
+                  const AppDropdownItem(value: 'Amravati, Maharashtra', label: 'Amravati'),
+                ];
+
+                return Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: AppDropdown<String>(
+                        label: LocalizationService.tr('district'),
+                        value: _selectedDistrict,
+                        items: districtItems,
+                        onChanged: (val) {
+                          if (val != null) setState(() => _selectedDistrict = val);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: AppTextField(
+                        label: LocalizationService.tr('farm_size'),
+                        hint: LocalizationService.tr('farm_size_hint'),
+                        controller: _farmSizeController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        isRequired: true,
+                        validator: (val) {
+                          if (val == null || val.trim().isEmpty) return LocalizationService.tr('error_required');
+                          if (double.tryParse(val.trim()) == null) return LocalizationService.tr('error_invalid_number');
+                          return null;
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 16),
 
@@ -564,6 +621,35 @@ class _CropAdvisorScreenState extends State<CropAdvisorScreen> with SingleTicker
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.warning_amber_rounded, size: 54, color: AppColors.danger),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Unable to sync past recommendations',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
 
         final records = snapshot.data ?? [];

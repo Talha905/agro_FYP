@@ -4,6 +4,7 @@ import '../constants/app_colors.dart';
 import '../models/weather_model.dart';
 import '../services/localization_service.dart';
 import '../services/weather_service.dart';
+import '../services/app_location_provider.dart';
 
 /// Dynamic, animated Agro-Weather Header Card with condition-aware gradients.
 class WeatherWidget extends StatefulWidget {
@@ -19,20 +20,10 @@ class WeatherWidget extends StatefulWidget {
 }
 
 class _WeatherWidgetState extends State<WeatherWidget> {
-  String selectedDistrict = 'Pune, Maharashtra';
-  late Future<WeatherInfo> _weatherFuture;
-
   @override
   void initState() {
     super.initState();
-    _weatherFuture = WeatherService.fetchWeather(location: selectedDistrict);
-  }
-
-  void _changeDistrict(String newDistrict) {
-    setState(() {
-      selectedDistrict = newDistrict;
-      _weatherFuture = WeatherService.fetchWeather(location: selectedDistrict);
-    });
+    AppLocationProvider.initLocation();
   }
 
   IconData _getWeatherIcon(String condition) {
@@ -65,10 +56,10 @@ class _WeatherWidgetState extends State<WeatherWidget> {
     return ValueListenableBuilder<String>(
       valueListenable: LocalizationService.currentLocale,
       builder: (context, langCode, _) {
-        return FutureBuilder<WeatherInfo>(
-          future: _weatherFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
+        return ValueListenableBuilder<LocationState>(
+          valueListenable: AppLocationProvider.stateNotifier,
+          builder: (context, locState, _) {
+            if (locState.status == LocationStatus.detecting) {
               return Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
@@ -85,15 +76,15 @@ class _WeatherWidgetState extends State<WeatherWidget> {
                       child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.primary),
                     ),
                     SizedBox(width: 12),
-                    Text('Fetching Live Weather Data...', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
+                    Text('Detecting Live Location...', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
                   ],
                 ),
               );
             }
 
-            final weather = snapshot.data ??
+            final weather = locState.weather ??
                 WeatherInfo(
-                  location: selectedDistrict,
+                  location: locState.displayDistrict,
                   temperature: 29.0,
                   condition: 'Partly Cloudy',
                   conditionKey: 'weather_partly_cloudy',
@@ -153,10 +144,14 @@ class _WeatherWidgetState extends State<WeatherWidget> {
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.location_on_rounded, size: 16, color: Colors.white),
+                                  Icon(
+                                    locState.isManual ? Icons.edit_location_alt : Icons.location_on_rounded,
+                                    size: 16,
+                                    color: Colors.white,
+                                  ),
                                   const SizedBox(width: 6),
                                   Text(
-                                    weather.location,
+                                    locState.displayDistrict,
                                     style: const TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.bold,
@@ -167,7 +162,13 @@ class _WeatherWidgetState extends State<WeatherWidget> {
                               ),
                             ),
                             PopupMenuButton<String>(
-                              onSelected: _changeDistrict,
+                              onSelected: (val) {
+                                if (val == '__USE_GPS__') {
+                                  AppLocationProvider.switchToCurrentGPS();
+                                } else {
+                                  AppLocationProvider.setManualLocation(val);
+                                }
+                              },
                               icon: Container(
                                 padding: const EdgeInsets.all(6),
                                 decoration: BoxDecoration(
@@ -177,12 +178,25 @@ class _WeatherWidgetState extends State<WeatherWidget> {
                                 child: const Icon(Icons.tune_rounded, size: 16, color: Colors.white),
                               ),
                               itemBuilder: (context) {
-                                return WeatherService.supportedDistricts.map((district) {
-                                  return PopupMenuItem(
-                                    value: district,
-                                    child: Text(district),
-                                  );
-                                }).toList();
+                                return [
+                                  const PopupMenuItem(
+                                    value: '__USE_GPS__',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.my_location, size: 16, color: AppColors.primary),
+                                        SizedBox(width: 8),
+                                        Text('🔄 Use My Current GPS Location', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                  ),
+                                  const PopupMenuDivider(),
+                                  ...WeatherService.supportedDistricts.map((district) {
+                                    return PopupMenuItem(
+                                      value: district,
+                                      child: Text(district),
+                                    );
+                                  }),
+                                ];
                               },
                             ),
                           ],
