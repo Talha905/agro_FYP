@@ -47,7 +47,8 @@ dependencies:
 
   # Person C — marketplace/maps
   geolocator: ^11.0.0
-  google_maps_flutter: ^2.5.3
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
   geoflutterfire_plus: ^0.0.33
 
   # Person D — weather and notifications

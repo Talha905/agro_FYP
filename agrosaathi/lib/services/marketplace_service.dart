@@ -79,6 +79,8 @@ class MarketplaceService {
         });
   }
 
+  // Note: Unused because listings store geohash as a plain top-level string,
+  // causing a field mismatch with geoflutterfire_plus subscribeWithin.
   Stream<List<ListingModel>> getNearbyListings(GeoPoint center, double radiusInKm) {
     return GeoCollectionReference(FirestoreRefs.listings)
         .subscribeWithin(

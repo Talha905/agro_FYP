@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart' as intl;
 import 'dart:convert';
@@ -25,10 +26,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   final String _role = (UserService.currentUser?.role ?? 'farmer').toLowerCase();
 
   // For Buyer Map
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
   GeoPoint _buyerCenter = UserService.currentUser?.location ?? const GeoPoint(19.0760, 72.8777); // Default Mumbai
   
-  late Stream<List<ListingModel>> _nearbyListingsStream;
   late Stream<List<ListingModel>> _allActiveListingsStream;
   late Stream<List<Map<String, dynamic>>> _myBidsStream;
   late Stream<List<ListingModel>> _myListingsStream;
@@ -40,7 +40,6 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     super.initState();
     _fetchRealLocation();
     
-    _nearbyListingsStream = _marketplaceService.getNearbyListings(_buyerCenter, 50.0);
     _allActiveListingsStream = _marketplaceService.getAllActiveListings();
     
     final buyerId = UserService.currentUser?.uid ?? '';
@@ -49,25 +48,31 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   }
 
   Future<void> _fetchRealLocation() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission != LocationPermission.whileInUse && permission != LocationPermission.always) return;
-    }
-    Position pos = await Geolocator.getCurrentPosition();
-    if (mounted) {
-      setState(() {
-        _buyerCenter = GeoPoint(pos.latitude, pos.longitude);
-        _nearbyListingsStream = _marketplaceService.getNearbyListings(_buyerCenter, 50.0);
-      });
-      _mapController?.animateCamera(CameraUpdate.newLatLng(LatLng(pos.latitude, pos.longitude)));
-    }
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission != LocationPermission.whileInUse && permission != LocationPermission.always) return;
+      }
+      Position? pos;
+      try {
+        pos = await Geolocator.getCurrentPosition(timeLimit: const Duration(seconds: 8));
+      } catch (_) {
+        pos = await Geolocator.getLastKnownPosition();
+      }
+      if (pos == null) return;
+      if (mounted) {
+        setState(() {
+          _buyerCenter = GeoPoint(pos!.latitude, pos.longitude);
+        });
+        _mapController.move(ll.LatLng(pos.latitude, pos.longitude), 12);
+      }
+    } catch (_) {}
   }
   @override
   Widget build(BuildContext context) {
-    final buyerId = UserService.currentUser?.uid ?? '';
     final isFarmer = _role == 'farmer';
     
     final tabs = <Tab>[
@@ -110,46 +115,82 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           children: [
             // TAB 1: MAP VIEW
             StreamBuilder<List<ListingModel>>(
-              stream: _nearbyListingsStream,
+              stream: _allActiveListingsStream,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                   return const Center(child: CircularProgressIndicator(color: Color(0xFF2E7D32)));
-                }
                 if (snapshot.hasError) {
                   return Center(child: Text('Error: ${snapshot.error}'));
                 }
-      
-                final listings = snapshot.data ?? [];
-                final activeListings = listings.where((l) => l.status == 'active').toList();
-      
-                Set<Marker> markers = activeListings.asMap().entries.map((entry) {
-                  int idx = entry.key;
-                  ListingModel l = entry.value;
-                  return Marker(
-                    markerId: MarkerId(l.id!),
-                    position: LatLng(l.location!.latitude, l.location!.longitude),
-                    onTap: () {
-                      _mapPageController.animateToPage(
-                        idx,
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                      );
-                    },
+
+                final allListings = snapshot.data ?? [];
+                final nearbyActiveListings = allListings.where((l) {
+                  if (l.status != 'active' || l.location == null) return false;
+                  final distance = Geolocator.distanceBetween(
+                    _buyerCenter.latitude,
+                    _buyerCenter.longitude,
+                    l.location!.latitude,
+                    l.location!.longitude,
                   );
-                }).toSet();
-      
+                  return distance <= 50000; // 50 km
+                }).toList();
+
+                final markers = <Marker>[
+                  // Blue marker at buyer center
+                  Marker(
+                    point: ll.LatLng(_buyerCenter.latitude, _buyerCenter.longitude),
+                    width: 40,
+                    height: 40,
+                    child: const Icon(
+                      Icons.my_location,
+                      color: Colors.blue,
+                      size: 32,
+                    ),
+                  ),
+                  // Red markers for each nearby active listing
+                  ...nearbyActiveListings.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final l = entry.value;
+                    return Marker(
+                      point: ll.LatLng(l.location!.latitude, l.location!.longitude),
+                      width: 40,
+                      height: 40,
+                      child: GestureDetector(
+                        onTap: () {
+                          _mapPageController.animateToPage(
+                            idx,
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                        },
+                        child: const Icon(
+                          Icons.location_on,
+                          color: Colors.red,
+                          size: 36,
+                        ),
+                      ),
+                    );
+                  }),
+                ];
+
                 return Stack(
                   children: [
-                    GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: LatLng(_buyerCenter.latitude, _buyerCenter.longitude),
-                        zoom: 10,
+                    FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: ll.LatLng(_buyerCenter.latitude, _buyerCenter.longitude),
+                        initialZoom: 10,
                       ),
-                      markers: markers,
-                      onMapCreated: (controller) => _mapController = controller,
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: true,
-                      zoomControlsEnabled: false,
+                      children: [
+                        TileLayer(
+                          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.example.agrosaathi',
+                        ),
+                        MarkerLayer(markers: markers),
+                        const RichAttributionWidget(
+                          attributions: [
+                            TextSourceAttribution('© OpenStreetMap contributors'),
+                          ],
+                        ),
+                      ],
                     ),
                     Positioned(
                       top: 0, left: 0, right: 0,
@@ -163,7 +204,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                         ),
                       ),
                     ),
-                    if (activeListings.isNotEmpty)
+                    if (nearbyActiveListings.isNotEmpty)
                       Positioned(
                         bottom: 24,
                         left: 0,
@@ -171,26 +212,25 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                         height: 140,
                         child: PageView.builder(
                           controller: _mapPageController,
-                          itemCount: activeListings.length,
+                          itemCount: nearbyActiveListings.length,
                           onPageChanged: (int index) {
-                            final listing = activeListings[index];
+                            final listing = nearbyActiveListings[index];
                             if (listing.location != null) {
-                              _mapController?.animateCamera(
-                                CameraUpdate.newLatLng(
-                                  LatLng(listing.location!.latitude, listing.location!.longitude),
-                                ),
+                              _mapController.move(
+                                ll.LatLng(listing.location!.latitude, listing.location!.longitude),
+                                12,
                               );
                             }
                           },
                           itemBuilder: (context, index) {
                             return Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                              child: _buildMapListingCard(activeListings[index]),
+                              child: _buildMapListingCard(nearbyActiveListings[index]),
                             );
                           },
                         ),
                       ),
-                    if (activeListings.isEmpty)
+                    if (nearbyActiveListings.isEmpty && snapshot.connectionState != ConnectionState.waiting)
                       Positioned(
                         top: 24,
                         left: 24,
@@ -209,8 +249,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                             textAlign: TextAlign.center,
                             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black87),
                           ),
-                        )
-                      )
+                        ),
+                      ),
                   ],
                 );
               },

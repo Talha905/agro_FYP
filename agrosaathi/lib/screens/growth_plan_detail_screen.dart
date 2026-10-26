@@ -72,10 +72,13 @@ class _GrowthPlanDetailScreenState extends State<GrowthPlanDetailScreen> {
         'pestControlReminders': plan.pestControlReminders,
       };
 
-      request.fields['plan_json'] = jsonEncode(planMap);
+      request.fields['plan_json'] = jsonEncode(
+        planMap,
+        toEncodable: (o) => o is Timestamp ? o.toDate().toIso8601String() : o.toString(),
+      );
       request.files.add(await http.MultipartFile.fromPath('file', image.path));
 
-      final streamedRes = await request.send().timeout(const Duration(seconds: 40));
+      final streamedRes = await request.send().timeout(const Duration(seconds: 120));
       final res = await http.Response.fromStream(streamedRes);
 
       if (!mounted) return;
